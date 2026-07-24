@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Domains\Parents\Actions\SyncParentAccounts;
 use App\Domains\Schools\Actions\SyncRoster;
 use App\Domains\Schools\Actions\SyncSchools;
 use App\Infrastructure\EcolePay\EcolePaySource;
@@ -18,7 +19,7 @@ use Laravel\Telescope\Telescope;
  */
 class SyncEcolePay extends Command
 {
-    protected $signature = 'eac:sync {entity=all : schools|roster|all}';
+    protected $signature = 'eac:sync {entity=all : schools|roster|accounts|all}';
 
     protected $description = 'Synchronise les données EcolePay (lecture seule) vers l\'entrepôt EAC.';
 
@@ -30,6 +31,7 @@ class SyncEcolePay extends Command
     private const ENTITIES = [
         'schools' => SyncSchools::class,
         'roster' => SyncRoster::class,
+        'accounts' => SyncParentAccounts::class,
     ];
 
     public function handle(EcolePaySource $source): int
@@ -87,7 +89,7 @@ class SyncEcolePay extends Command
                 // Somme des lignes écrites, quelle que soit l'entité.
                 'rows_inserted' => array_sum(array_intersect_key(
                     $stats,
-                    array_flip(['inserted', 'students', 'known_parents', 'links']),
+                    array_flip(['inserted', 'students', 'known_parents', 'links', 'matched_known', 'new_registered']),
                 )),
                 'rows_updated' => $stats['updated'] ?? 0,
                 'rows_rejected' => $stats['rejected'] ?? 0,

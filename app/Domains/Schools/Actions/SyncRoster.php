@@ -99,7 +99,7 @@ final class SyncRoster
 
                 $hex = bin2hex($hash = $this->hasher->hash($phone));
                 if (! isset($parentCache[$hex]) && ! isset($newParents[$hex])) {
-                    $newParents[$hex] = $this->knownParentRow($hash, $now);
+                    $newParents[$hex] = $this->knownParentRow($hash, $phone, $now);
                 }
             }
         }
@@ -270,12 +270,16 @@ final class SyncRoster
     /**
      * @return array<string, mixed>
      */
-    private function knownParentRow(string $hash, Carbon $now): array
+    private function knownParentRow(string $hash, PhoneNumber $phone, Carbon $now): array
     {
         return [
             // source_parent_id NULL = parent connu, pas encore inscrit.
             'source_parent_id' => null,
             'phone_hash' => $hash,
+            // Le numéro en clair : indispensable pour cibler les campagnes de
+            // relance des parents connus non inscrits.
+            'phone_e164' => $phone->canonical,
+            'phone_country' => config('eac.country_code'),
             'first_known_at' => $now,
             'marketing_consent' => false,
             'is_pseudonymized' => false,
