@@ -4,6 +4,7 @@ namespace App\Domains\Schools\Actions;
 
 use App\Domains\Schools\Models\School;
 use App\Infrastructure\EcolePay\SchoolReader;
+use App\Infrastructure\Sync\Models\SyncRun;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -28,7 +29,7 @@ final class SyncSchools
     /**
      * @return array{read: int, inserted: int, updated: int, unchanged: int}
      */
-    public function __invoke(): array
+    public function __invoke(?SyncRun $run = null): array
     {
         $stats = ['read' => 0, 'inserted' => 0, 'updated' => 0, 'unchanged' => 0];
         $now = Carbon::now();

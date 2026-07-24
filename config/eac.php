@@ -14,6 +14,20 @@ return [
 
     /*
     |---------------------------------------------------------------------------
+    | Confidentialité
+    |---------------------------------------------------------------------------
+    |
+    | Clé HMAC des téléphones parents. Un simple hachage serait cassable par force
+    | brute (un numéro tient dans moins d'un milliard de valeurs) : le secret rend
+    | l'empreinte incassable. Il est NON rotatif sans recalcul complet de la colonne
+    | phone_hash — le fixer une fois pour toutes.
+    |
+    */
+
+    'phone_hash_key' => env('EAC_PHONE_HASH_KEY', ''),
+
+    /*
+    |---------------------------------------------------------------------------
     | Règle d'adoption
     |---------------------------------------------------------------------------
     |
