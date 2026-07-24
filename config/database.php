@@ -84,6 +84,39 @@ return [
             ]) : [],
         ],
 
+        /*
+        |----------------------------------------------------------------------
+        | Connexion source EcolePay — LECTURE SEULE
+        |----------------------------------------------------------------------
+        |
+        | Base de production EcolePay, lue par la synchronisation. EAC ne doit
+        | JAMAIS y écrire : aucune migration, aucun insert/update ne cible cette
+        | connexion. En production, l'utilisateur MySQL associé doit n'avoir que
+        | le privilège SELECT. En local, elle pointe sur une copie importée.
+        |
+        */
+        'ecolepay' => [
+            'driver' => 'mysql',
+            'url' => env('ECOLEPAY_DB_URL'),
+            'host' => env('ECOLEPAY_DB_HOST', '127.0.0.1'),
+            'port' => env('ECOLEPAY_DB_PORT', '3306'),
+            'database' => env('ECOLEPAY_DB_DATABASE', 'ecolepay_prod'),
+            'username' => env('ECOLEPAY_DB_USERNAME', 'root'),
+            'password' => env('ECOLEPAY_DB_PASSWORD', ''),
+            'unix_socket' => env('ECOLEPAY_DB_SOCKET', ''),
+            'charset' => env('ECOLEPAY_DB_CHARSET', 'utf8mb4'),
+            'collation' => env('ECOLEPAY_DB_COLLATION', 'utf8mb4_unicode_ci'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            // Non strict : la source a des colonnes date en `text` et des types
+            // hérités qu'on lit tels quels, sans imposer nos règles.
+            'strict' => false,
+            'engine' => null,
+            'options' => extension_loaded('pdo_mysql') ? array_filter([
+                Mysql::ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
+            ]) : [],
+        ],
+
         'pgsql' => [
             'driver' => 'pgsql',
             'url' => env('DB_URL'),

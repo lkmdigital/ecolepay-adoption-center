@@ -101,15 +101,29 @@ Commercial, Marketing + 1). On a construit **6 rôles + Développeur**. Recomman
 
 ---
 
-## 3. La connexion à EcolePay (le gros morceau à venir)
-
-C'est le cœur du Sprint 2 et ce qui rend la plateforme réelle. Rien n'est encore
-branché : tout tourne aujourd'hui sur le jeu de démonstration.
+## 3. La connexion à EcolePay ✅ établie (en local)
 
 ### Principe
-EAC ouvre **deux connexions MySQL** :
-- `mysql` → la base EAC (lecture/écriture) — celle qu'on a construite.
-- `ecolepay` → la base EcolePay (**lecture seule stricte**).
+EAC ouvre **deux connexions MySQL** ([`config/database.php`](../config/database.php)) :
+- `mysql` → la base EAC `ecolepay_adoption_center` (lecture/écriture).
+- `ecolepay` → la base EcolePay (**lecture seule par convention** : le code n'émet
+  jamais que des `SELECT` ; en prod l'utilisateur MySQL n'aura que `GRANT SELECT`).
+
+### État — connexion vérifiée
+En local, `ecolepay` pointe sur une copie réelle : **`ecolepay_prod`**.
+Volumes constatés (2026-07-24) :
+
+| Table source | Lignes |
+|---|---|
+| `tb_ecole` (écoles) | 110 |
+| `users` (comptes parents) | 13 237 |
+| `payer` (paiements) | 51 719 — dont **10 manuels** (exclus) et **29 976 via app validés** |
+| `tb_subscription` (abonnements) | 4 240 |
+| `tb_lkmdigital` (roster) | 54 530 |
+
+Le filtre d'adoption (`is_manuel = 0 AND statut = 1`) est vérifié sur ces données.
+En production, il suffira de pointer les variables `ECOLEPAY_DB_*` du `.env` vers la
+base distante (accès à valider avec le devlead).
 
 ### Mapping réel des sources (dump `u698699576_ecole`, MariaDB 11.8) ✅ confirmé
 
@@ -214,9 +228,9 @@ Adapté de ta roadmap, corrigé pour **Livewire (pas React)** et pour ce qui est
 
 | Sprint | Objet | État | Reste à faire |
 |---|---|---|---|
-| **0** | Fondation, architecture, packages | ✅ **Fait** | Committer, CI GitHub Actions |
+| **0** | Fondation, architecture, packages | ✅ **Fait** | Poussé sur GitHub (`develop`). Reste : CI GitHub Actions |
 | **1** | Auth, rôles, permissions, profil, logs | 🟡 **Partiel** | Écrans login/profil Flux, `login_history`, activity log |
-| **2** | **Data Warehouse — synchro EcolePay** | ⬜ À faire | 2ᵉ connexion, Jobs de sync, mapping sources, Actions de calcul des parcours |
+| **2** | **Data Warehouse — synchro EcolePay** | 🟡 **En cours** | Connexion `ecolepay` ✅ ; reste Jobs de sync + Actions de calcul |
 | **3** | Dashboard exécutif | ⬜ | KPI (3 taux), widgets ECharts, cache |
 | **4** | Écoles + fiche + score santé | ⬜ | Listes, filtres, score 4 niveaux, classement |
 | **5** | Parents | ⬜ | Recherche par n°, timeline, statuts, import |
@@ -229,55 +243,65 @@ Adapté de ta roadmap, corrigé pour **Livewire (pas React)** et pour ce qui est
 | **12** | Optimisation | ⬜ | Cache, index, pagination, responsive |
 | **13** | Tests & déploiement Hostinger | ⬜ | Tests archi, déploiement, sauvegardes, monitoring |
 
+### Détail du Sprint 2 en cours (le moteur de données)
+
+C'est le sprint qui transforme les 51 719 paiements bruts en KPI d'adoption.
+Ordre d'implémentation :
+
+1. **Raffinements de schéma** (migrations additives, sans casser l'existant)
+   - `dim_schools` : `subscription_model` (bundled/parent-paid) + géographie éditable
+     en EAC (préservée par la synchro).
+   - `fact_payments` : `is_manual` (stocké, exclu de tous les calculs).
+2. **Repositories de lecture EcolePay** (`app/Infrastructure/Sync/`) — requêtes
+   `SELECT` sur la connexion `ecolepay`, une par entité.
+3. **Jobs de synchronisation** par entité (écoles → roster → comptes → paiements →
+   abonnements → activité), idempotents, avec watermark et fenêtre de reprise.
+4. **Actions de calcul** : `BuildParentJourney`, `DetectInactivity`,
+   `ComputeAdoptionKpis` (les 3 taux) — testées contre les données réelles.
+5. **Orchestration** : commande `eac:sync` + planification (scheduler).
+
 ### Stratégie Git (depuis ta roadmap)
 ```
 main ← develop ← sprint-N-xxx
 ```
 Une branche par sprint, revue, testée, fusionnée dans `develop`.
-**À faire maintenant** : commit initial de tout l'existant sur `develop`.
+- ✅ Baseline poussée sur `main` + `develop`.
+- Sprint 2 se développe sur `sprint-2-datawarehouse`.
 
 ---
 
 ## 7. Ce dont j'ai besoin de toi (entrées bloquantes)
 
-Rien de tout §3-§6 ne peut démarrer sans ces réponses.
-
 ### ✅ Résolus
-- ~~Schéma EcolePay~~ → fourni (dump `u698699576_ecole`).
+- ~~Schéma EcolePay~~ → fourni + base locale `ecolepay_prod` connectée.
 - ~~Hébergement~~ → **VPS KVM 2**.
+- ~~Connexion EcolePay~~ → établie en lecture seule (local). Prod : à finaliser avec le devlead.
+- ~~`is_manuel`~~ → confirmé : exclu de tous les calculs (module de comptabilité interne).
+- ~~Géographie~~ → confirmé : **saisie manuelle dans EAC**, une fois par école.
 
-### Bloquant pour le Sprint 2 (connexion EcolePay)
-1. **Accès à EcolePay depuis le VPS** : connexion MySQL directe possible (IP du VPS
-   autorisée), ou faut-il passer par un **dump nocturne** ? (§4)
-2. **Identifiants de lecture seule** côté EcolePay — c'est toi qui les crées et les
-   mets dans le `.env` (je ne manipule pas de credentials).
+### Reste à trancher (non bloquant pour le Sprint 2)
+1. **Modèle d'abonnement par école** : comment lire, dans les données, qu'une école
+   intègre l'abonnement à la scolarité vs le fait payer au parent ? (`tb_ecole.abonnement`
+   ? `payer.abonnement` ?) — sinon, saisie manuelle comme la géographie.
+2. **Seuils d'inactivité définitifs** (« à risque » / « perdu ») — proposés : 60 / 120 j.
+3. **Calendrier scolaire officiel** — le calendrier actuel est une hypothèse ivoirienne.
+4. **Rôles** : on garde les 6 + Développeur, ou on réduit aux 4 profils des specs ?
 
-### Nouvelles questions soulevées par le schéma réel
-3. **Confirmation `is_manuel`** : un paiement `is_manuel = 1` (espèces) ne compte
-   jamais comme adoption — c'est bien l'intention ? (§3)
-4. **Géographie des écoles** : `tb_ecole` n'a ni ville ni région ni zone. Comment
-   veux-tu peupler les analyses régionales ? (saisie manuelle EAC / dérivation du
-   `code` / autre source)
-5. **Modèle d'abonnement par école** : comment lire, dans les données, qu'une école
-   intègre l'abonnement à la scolarité vs le fait payer au parent ? (colonne
-   `tb_ecole.abonnement` ? valeur `payer.abonnement` ?)
-
-### Bloquant pour la justesse métier (inchangé)
-6. **Seuils d'inactivité définitifs** (« à risque » / « perdu ») — proposés : 60 / 120 j.
-7. **Calendrier scolaire officiel** — le calendrier actuel est une hypothèse ivoirienne.
-8. **Rôles** : on garde les 6 + Développeur, ou on réduit aux 4 profils des specs ?
+Ces quatre points ont des valeurs par défaut raisonnables : le développement peut
+avancer et on ajuste quand tu confirmes.
 
 ---
 
-## 8. Prochaine étape immédiate recommandée
+## 8. Prochaine étape immédiate
 
-1. **Committer l'existant** sur `develop` (rien n'est sauvegardé en git à ce jour).
-2. **Répondre aux questions §7.1 à §7.4** (schéma EcolePay + type d'hébergement) —
-   ce sont les deux verrous du Sprint 2.
-3. Dès que le schéma EcolePay est connu : j'écris la **2ᵉ connexion + les Jobs de
-   synchronisation + le mapping**, et on remplace le jeu de démonstration par les
-   vraies données.
+Sprint 2 (moteur de données), dans l'ordre du §6 :
 
-En attendant tes réponses, je peux avancer **sans risque** sur ce qui n'en dépend
-pas : intégrer les raffinements KPI (§2.1), le champ modèle d'abonnement (§2.2), les
-Actions de calcul des parcours, et les écrans d'authentification Flux (Sprint 1).
+1. Branche `sprint-2-datawarehouse`.
+2. Migrations additives (`subscription_model` + géographie sur `dim_schools`,
+   `is_manual` sur `fact_payments`).
+3. Repositories de lecture EcolePay + premiers Jobs de synchronisation (écoles,
+   roster, comptes).
+4. Actions de calcul des parcours + les 3 taux, testées contre `ecolepay_prod`.
+
+Objectif de fin de sprint : `php artisan eac:sync` remplit l'entrepôt depuis les
+vraies données EcolePay, et les 3 taux d'adoption sont calculés et vérifiables.

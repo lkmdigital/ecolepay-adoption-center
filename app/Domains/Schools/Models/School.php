@@ -39,6 +39,8 @@ class School extends Model
             'latitude' => 'decimal:7',
             'longitude' => 'decimal:7',
             'onboarded_at' => 'date',
+            'subscription_amount' => 'integer',
+            'geo_locked' => 'boolean',
             'is_test' => 'boolean',
             'is_current' => 'boolean',
             'valid_from' => 'datetime',
@@ -99,5 +101,14 @@ class School extends Model
     public function scopeSameSource(Builder $query, string $sourceSchoolId): Builder
     {
         return $query->where('source_school_id', $sourceSchoolId);
+    }
+
+    /**
+     * L'école prend en charge l'abonnement (intégré à la scolarité) : le paiement
+     * d'abonnement ne distingue alors pas les adoptants.
+     */
+    public function coversSubscription(): bool
+    {
+        return $this->subscription_model === 'bundled';
     }
 }
