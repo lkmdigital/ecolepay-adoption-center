@@ -6,7 +6,52 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/*
+ | Design system EAC — tokens repris de la maquette (claude.ai/design).
+ | Sobre, dense en données, premium. Inter + JetBrains Mono.
+ */
 @theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-sans: 'Inter', system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+    /* Bleu primaire */
+    --color-brand-50: #eef3fe;
+    --color-brand-100: #e0e9fc;
+    --color-brand-200: #b9cdfb;
+    --color-brand-500: #4e7de0;
+    --color-brand-600: #2554c7; /* principal */
+    --color-brand-700: #1d3f9c;
+
+    /* Neutres */
+    --color-ink-50: #f8f9fb;
+    --color-ink-100: #f2f3f5;
+    --color-ink-150: #f0f1f3;
+    --color-ink-200: #e7e9ed;
+    --color-ink-300: #d8dce3;
+    --color-ink-400: #b7bcc5;
+    --color-ink-500: #8a93a3;
+    --color-ink-600: #6b7280;
+    --color-ink-700: #5b6472;
+    --color-ink-800: #3a4150;
+    --color-ink-900: #14181f;
+
+    /* Sémantique */
+    --color-success: #189b57;
+    --color-success-soft: #e9f8ef;
+    --color-warning: #d97706;
+    --color-warning-soft: #fef3e2;
+    --color-danger: #dc2626;
+    --color-danger-soft: #fdecec;
+}
+
+@layer base {
+    body {
+        background: var(--color-ink-50);
+        color: var(--color-ink-900);
+        -webkit-font-smoothing: antialiased;
+    }
+
+    ::selection {
+        background: #cfe0ff;
+    }
 }
