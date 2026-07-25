@@ -1,19 +1,35 @@
 @php
-    // Navigation principale — l'ordre et les libellés suivent la maquette.
-    $active ??= 'dashboard';
-    $nav = [
-        ['key' => 'dashboard', 'label' => 'Dashboard', 'route' => \Illuminate\Support\Facades\Route::has('dashboard.index') ? route('dashboard.index') : '#'],
-        ['key' => 'schools', 'label' => 'Écoles', 'route' => '#'],
-        ['key' => 'parents', 'label' => 'Parents', 'route' => '#'],
-        ['key' => 'campaigns', 'label' => 'Campagnes', 'route' => '#'],
-        ['key' => 'analytics', 'label' => 'Analytics', 'route' => '#'],
-        ['key' => 'reports', 'label' => 'Rapports', 'route' => '#'],
-        ['key' => 'notifications', 'label' => 'Notifications', 'route' => '#'],
-        ['key' => 'assistant', 'label' => 'Assistant IA', 'route' => '#'],
-        ['key' => 'users', 'label' => 'Utilisateurs', 'route' => '#'],
-        ['key' => 'activity', 'label' => "Journal d'activité", 'route' => '#'],
-        ['key' => 'settings', 'label' => 'Paramètres', 'route' => '#'],
+    use Illuminate\Support\Facades\Route as RouteFacade;
+
+    // Chaque module : libellé, nom de route (si elle existe), titre et sous-titre.
+    $modules = [
+        'dashboard' => ['Dashboard', 'dashboard.index', 'Dashboard exécutif', "Vue d'ensemble de l'adoption d'EcolePay"],
+        'schools' => ['Écoles', 'schools.index', 'Écoles', "Suivi de l'adoption par établissement"],
+        'parents' => ['Parents', 'parents.index', 'Parents', 'Recherche et parcours des parents'],
+        'campaigns' => ['Campagnes', 'campaigns.index', 'Campagnes', 'Import et suivi des campagnes'],
+        'analytics' => ['Analytics', 'analytics.index', 'Analytics', 'Analyses et tendances'],
+        'reports' => ['Rapports', 'reports.index', 'Rapports', 'Génération et export'],
+        'notifications' => ['Notifications', 'notifications.index', 'Notifications & alertes', 'Anomalies et alertes'],
+        'assistant' => ['Assistant IA', 'assistant.index', 'Assistant IA', 'Copilote décisionnel'],
+        'users' => ['Utilisateurs', 'users.index', 'Utilisateurs & rôles', 'Gestion des accès'],
+        'activity' => ["Journal d'activité", 'activity.index', "Journal d'activité", 'Audit des actions'],
+        'settings' => ['Paramètres', 'settings.index', 'Paramètres', 'Configuration de la plateforme'],
     ];
+
+    // Module actif déduit du nom de la route courante (dashboard.index → dashboard).
+    $routeName = RouteFacade::currentRouteName() ?? '';
+    $active ??= explode('.', $routeName)[0] ?: 'dashboard';
+    if (! isset($modules[$active])) {
+        $active = 'dashboard';
+    }
+    $header ??= $modules[$active][2];
+    $subheader ??= $modules[$active][3];
+
+    $nav = collect($modules)->map(fn ($m, $key) => [
+        'key' => $key,
+        'label' => $m[0],
+        'route' => RouteFacade::has($m[1]) ? route($m[1]) : '#',
+    ])->values()->all();
     $icons = [
         'dashboard' => '<rect x="3" y="3" width="6" height="6" rx="1.5" fill="currentColor"/><rect x="11" y="3" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.45"/><rect x="3" y="11" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.45"/><rect x="11" y="11" width="6" height="6" rx="1.5" fill="currentColor"/>',
         'schools' => '<polygon points="10,2 17,7 3,7" fill="currentColor"/><rect x="4" y="7.5" width="12" height="9.5" rx="1" stroke="currentColor" stroke-width="1.6" fill="none"/><rect x="9" y="12" width="2" height="5" fill="currentColor"/>',
