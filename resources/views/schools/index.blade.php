@@ -411,6 +411,7 @@ new class extends Component
                                         </button>
                                         <flux:menu>
                                             <flux:menu.item icon="eye" wire:click="select({{ $s['id'] }})">Aperçu rapide</flux:menu.item>
+                                            <flux:menu.item icon="arrow-top-right-on-square" href="{{ route('schools.show', $s['id']) }}" wire:navigate>Ouvrir la fiche</flux:menu.item>
                                             <flux:menu.item icon="users" href="{{ route('parents.index') }}" wire:navigate>Voir les parents</flux:menu.item>
                                             <flux:menu.separator />
                                             <flux:menu.item icon="megaphone" disabled>Voir les campagnes — à venir</flux:menu.item>
@@ -577,9 +578,12 @@ new class extends Component
 
                 <div class="border-t border-ink-150 px-6 py-4">
                     <div class="grid grid-cols-2 gap-2">
-                        <a href="{{ route('parents.index') }}" wire:navigate class="inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2.5 text-[12.5px] font-semibold text-white hover:bg-brand-700">Voir les parents</a>
+                        <a href="{{ route('schools.show', $s['id']) }}" wire:navigate class="col-span-2 inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2.5 text-[12.5px] font-semibold text-white hover:bg-brand-700">
+                            Ouvrir la fiche complète
+                            <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M7 4l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </a>
+                        <a href="{{ route('parents.index') }}" wire:navigate class="inline-flex items-center justify-center gap-1.5 rounded-lg border border-ink-200 px-3 py-2.5 text-[12.5px] font-semibold text-ink-800 hover:bg-ink-50">Voir les parents</a>
                         <button wire:click="export" class="inline-flex items-center justify-center gap-1.5 rounded-lg border border-ink-200 px-3 py-2.5 text-[12.5px] font-semibold text-ink-800 hover:bg-ink-50">Exporter</button>
-                        <button disabled title="Fiche détaillée à venir" class="col-span-2 inline-flex cursor-not-allowed items-center justify-center gap-1.5 rounded-lg border border-dashed border-ink-200 bg-ink-50 px-3 py-2.5 text-[12.5px] font-medium text-ink-400">Fiche complète · lancer une campagne — à venir</button>
                     </div>
                 </div>
             @endif
