@@ -39,7 +39,9 @@ class Payment extends Model
             'amount' => 'decimal:2',
             'fee_amount' => 'decimal:2',
             'net_amount' => 'decimal:2',
+            'subscription_amount' => 'integer',
             'status' => PaymentStatus::class,
+            'is_manual' => 'boolean',
             'is_first_payment' => 'boolean',
             'is_test' => 'boolean',
             'source_created_at' => 'datetime',
@@ -80,6 +82,24 @@ class Payment extends Model
     public function scopeFailed(Builder $query): Builder
     {
         return $query->where('status', PaymentStatus::Failed);
+    }
+
+    /**
+     * Paiement effectué via l'application (mobile money), par opposition au module
+     * comptable manuel (espèces/chèque). SEUL un paiement via l'app compte pour
+     * l'adoption : c'est le parent qui utilise EcolePay.
+     */
+    public function scopeViaApp(Builder $query): Builder
+    {
+        return $query->where('is_manual', false);
+    }
+
+    /**
+     * Le paiement qui déclenche l'adoption : via l'app ET validé.
+     */
+    public function scopeCountsForAdoption(Builder $query): Builder
+    {
+        return $query->where('is_manual', false)->where('status', PaymentStatus::Success);
     }
 
     /**

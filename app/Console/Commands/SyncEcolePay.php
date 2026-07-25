@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Domains\Parents\Actions\SyncParentAccounts;
+use App\Domains\Parents\Actions\SyncPayments;
 use App\Domains\Schools\Actions\SyncRoster;
 use App\Domains\Schools\Actions\SyncSchools;
 use App\Infrastructure\EcolePay\EcolePaySource;
@@ -19,7 +20,7 @@ use Laravel\Telescope\Telescope;
  */
 class SyncEcolePay extends Command
 {
-    protected $signature = 'eac:sync {entity=all : schools|roster|accounts|all}';
+    protected $signature = 'eac:sync {entity=all : schools|roster|accounts|payments|all}';
 
     protected $description = 'Synchronise les données EcolePay (lecture seule) vers l\'entrepôt EAC.';
 
@@ -32,6 +33,7 @@ class SyncEcolePay extends Command
         'schools' => SyncSchools::class,
         'roster' => SyncRoster::class,
         'accounts' => SyncParentAccounts::class,
+        'payments' => SyncPayments::class,
     ];
 
     public function handle(EcolePaySource $source): int
