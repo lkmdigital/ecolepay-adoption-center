@@ -72,7 +72,6 @@ new class extends Component
     };
     $deltaText = fn ($d) => isset($d['pts']) ? number_format($d['pts'], 1, ',', ' ').' pts' : $fr($d['pct']).' %';
 
-    // Sparkline SVG à partir d'une série.
     $sparkline = function (?array $series, string $color) {
         if (! $series || count($series) < 2 || max($series) == 0) {
             return '';
@@ -91,6 +90,19 @@ new class extends Component
             .'<polygon points="0,'.$h.' '.$line.' '.$w.','.$h.'" fill="'.$color.'" opacity="0.08"/>'
             .'<polyline points="'.$line.'" fill="none" stroke="'.$color.'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     };
+
+    // En-tête de chapitre : une question métier + un sous-titre + une phrase d'analyse.
+    $chapter = function (int $n, string $q, string $subtitle, string $lead = '') {
+        return '<div class="mt-11 mb-5 first:mt-0">'
+            .'<div class="flex items-center gap-3">'
+                .'<span class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[10px] bg-ink-900 text-[14px] font-bold text-white">'.$n.'</span>'
+                .'<div class="min-w-0"><div class="text-[19px] font-bold tracking-tight text-ink-900">'.$q.'</div>'
+                .'<div class="text-[12.5px] text-ink-500">'.$subtitle.'</div></div>'
+            .'</div>'
+            .($lead ? '<div class="mt-3.5 rounded-xl border border-ink-150 border-l-[3px] border-l-brand-600 bg-white px-4 py-3 text-[13.5px] leading-relaxed text-ink-700 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">'.$lead.'</div>' : '')
+            .'</div>';
+    };
+    $strong = fn ($t) => '<strong class="font-bold text-ink-900">'.$t.'</strong>';
 
     $icons = [
         'adoption' => '<circle cx="6" cy="6" r="2.3" stroke="currentColor" stroke-width="1.6"/><circle cx="14" cy="14" r="2.3" stroke="currentColor" stroke-width="1.6"/><line x1="15" y1="5" x2="5" y2="15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
@@ -122,13 +134,37 @@ new class extends Component
         'info' => ['#1D3F9C', '#EEF3FE'],
         'success' => ['#0F7A44', '#E9F8EF'],
     ];
+
+    // --- Fil narratif calculé sur les données réelles ---
+    $sit = $this->data['situation'];
+    $repByLabel = collect($this->data['repartition'])->keyBy('label');
+    $leakConnus = (int) ($repByLabel['Connus non inscrits']['value'] ?? 0);
+    $leakInscrits = (int) ($repByLabel['Inscrits non payeurs']['value'] ?? 0);
+    $top5pot = (int) collect($this->data['opportunities'])->sum('potential');
+    $rateSeries = $this->data['health']['adoptionRate'];
+    $trendUp = count($rateSeries) >= 2 && (float) end($rateSeries) >= (float) reset($rateSeries);
+    $recos = $this->data['recommendations'];
+    $topReco = $recos[0]['title'] ?? null;
+
+    $leadWhere = 'Adoption globale à '.$strong(number_format($sit['adoptionRate'], 1, ',', ' ').' %')
+        .($trendUp ? ", en progression sur l'année" : '').'. Il reste '.$strong($fr($sit['nonAdopters']))
+        .' parents à convertir, soit ≈ '.$strong($money($sit['potentialRevenue'])).' d\'abonnements dormants.';
+    $leadWhy = 'Le premier verrou : '.$strong($fr($leakConnus)).' parents connus ne se sont jamais inscrits. '
+        .'Vient ensuite '.$strong($fr($leakInscrits)).' inscrits qui n\'ont jamais payé. '
+        .'La courbe monte quand ces deux marches se franchissent — la rentrée de septembre est le moment clé.';
+    $leadSchools = $strong($fr($sit['urgentSchools'])).' écoles passent sous 25 % d\'adoption sur une base significative. '
+        .'Les voici, des plus lourdes (potentiel le plus élevé) aux plus légères.';
+    $leadPotential = $strong($money($sit['potentialRevenue'])).' d\'abonnements dormants au total. '
+        .'Les 5 écoles ci-dessous en concentrent '.$strong($money($top5pot)).' — à cibler en premier.';
+    $leadToday = $topReco
+        ? 'Priorité du jour : '.$strong($topReco).'. '.count($recos).' actions recommandées ci-dessous, classées par impact.'
+        : count($recos).' actions recommandées ci-dessous.';
 @endphp
 
 <div class="mx-auto max-w-[1480px]">
 
     {{-- ============ Panneau de filtres ============ --}}
-    <div class="mb-6 flex flex-wrap items-center gap-2">
-        {{-- Période --}}
+    <div class="mb-2 flex flex-wrap items-center gap-2">
         <flux:dropdown>
             <button class="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-[13px] font-semibold text-ink-800 hover:bg-ink-50">
                 <svg width="15" height="15" viewBox="0 0 20 20" fill="none" class="text-ink-500"><rect x="3" y="4.5" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M3 8h14M7 3v3M13 3v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
@@ -144,7 +180,6 @@ new class extends Component
             </flux:menu>
         </flux:dropdown>
 
-        {{-- École / Région / Campagne : présents, désactivés tant que la donnée manque --}}
         @php
             $disabledFilters = [
                 ['École', 'La vue exécutive est globale ; le détail par école est dans le module Écoles'],
@@ -161,7 +196,6 @@ new class extends Component
         @endforeach
 
         <div class="ml-auto flex items-center gap-2">
-            {{-- Comparaison --}}
             <div class="hidden items-center gap-1.5 md:flex">
                 <span class="text-[12px] font-medium text-ink-500">Comparer :</span>
                 @foreach (['previous' => 'période préc.', 'year' => 'année préc.'] as $ckey => $clabel)
@@ -180,8 +214,9 @@ new class extends Component
         </div>
     </div>
 
-    {{-- ============ 1. KPI stratégiques ============ --}}
-    <div class="mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-500">Indicateurs stratégiques</div>
+    {{-- ══════════ 1. OÙ EN SOMMES-NOUS ? ══════════ --}}
+    {!! $chapter(1, 'Où en sommes-nous ?', "La photo du jour de l'adoption EcolePay", $leadWhere) !!}
+
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         @foreach ($this->data['kpis']['strategic'] as $k)
             @php [$bg, $fg, $line] = $accent[$k['key']]; @endphp
@@ -214,9 +249,8 @@ new class extends Component
         @endforeach
     </div>
 
-    {{-- ============ 2. Situation actuelle (hero) ============ --}}
-    @php $s = $this->data['situation']; @endphp
-    <div class="mt-5 overflow-hidden rounded-[20px] text-white shadow-[0_12px_40px_rgba(23,60,130,0.28)]"
+    {{-- Carte hero « Situation actuelle » --}}
+    <div class="mt-4 overflow-hidden rounded-[20px] text-white shadow-[0_12px_40px_rgba(23,60,130,0.28)]"
          style="background: radial-gradient(120% 140% at 0% 0%, #2E5BD0 0%, #173C82 55%, #102C61 100%)">
         <div class="flex flex-wrap items-stretch">
             <div class="flex flex-[1.4_1_320px] flex-col justify-center gap-1 border-white/10 px-8 py-7 md:border-r">
@@ -225,11 +259,11 @@ new class extends Component
                     Situation actuelle
                 </div>
                 <div class="mt-1 flex items-end gap-3">
-                    <span class="text-[46px] font-extrabold leading-none tracking-tight">{{ number_format($s['adoptionRate'], 1, ',', ' ') }} %</span>
-                    @if ($s['deltaPts'] > 0)
+                    <span class="text-[46px] font-extrabold leading-none tracking-tight">{{ number_format($sit['adoptionRate'], 1, ',', ' ') }} %</span>
+                    @if ($sit['deltaPts'] > 0)
                         <span class="mb-1.5 inline-flex items-center gap-0.5 rounded-full bg-white/15 px-2 py-0.5 text-[12.5px] font-bold text-white">
                             <svg width="11" height="11" viewBox="0 0 20 20" fill="none"><path d="M10 5v10M6 9l4-4 4 4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                            {{ number_format($s['deltaPts'], 1, ',', ' ') }} pts · 30 j
+                            {{ number_format($sit['deltaPts'], 1, ',', ' ') }} pts · 30 j
                         </span>
                     @endif
                 </div>
@@ -238,14 +272,14 @@ new class extends Component
 
             <div class="flex flex-[1_1_240px] flex-col justify-center gap-1 border-white/10 px-8 py-7 md:border-r">
                 <div class="text-[13px] font-semibold text-white/70">Potentiel restant</div>
-                <div class="text-[30px] font-extrabold leading-tight">{{ $fr($s['nonAdopters']) }}</div>
-                <div class="text-[13px] text-white/70">parents à convertir · ≈ <span class="font-semibold text-white">{{ $money($s['potentialRevenue']) }}</span></div>
+                <div class="text-[30px] font-extrabold leading-tight">{{ $fr($sit['nonAdopters']) }}</div>
+                <div class="text-[13px] text-white/70">parents à convertir · ≈ <span class="font-semibold text-white">{{ $money($sit['potentialRevenue']) }}</span></div>
             </div>
 
             <div class="flex flex-[1_1_240px] flex-col justify-center gap-2 px-8 py-7">
                 <div class="text-[13px] font-semibold text-white/70">Intervention immédiate</div>
                 <div class="flex items-baseline gap-2">
-                    <span class="text-[30px] font-extrabold leading-none">{{ $fr($s['urgentSchools']) }}</span>
+                    <span class="text-[30px] font-extrabold leading-none">{{ $fr($sit['urgentSchools']) }}</span>
                     <span class="text-[13px] text-white/70">écoles prioritaires</span>
                 </div>
                 <a href="{{ route('schools.index', ['health' => 'prioritaire']) }}" wire:navigate
@@ -257,9 +291,8 @@ new class extends Component
         </div>
     </div>
 
-    {{-- ============ 3. Volumétrie (secondaire) ============ --}}
-    <div class="mt-8 mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-500">Volumétrie</div>
-    <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">
+    {{-- Volumétrie de contexte --}}
+    <div class="mt-4 grid grid-cols-2 gap-3 xl:grid-cols-4">
         @foreach ($this->data['kpis']['secondary'] as $k)
             <div class="flex items-center gap-3.5 rounded-[13px] border border-ink-200 bg-white px-4 py-3.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
                 <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] bg-ink-100 text-ink-700">
@@ -279,26 +312,13 @@ new class extends Component
         @endforeach
     </div>
 
-    {{-- ============ 4. Santé globale ============ --}}
-    <div class="mt-8 mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-500">Santé globale</div>
-    <div class="grid grid-cols-1 gap-4 lg:grid-cols-5">
-        <div class="lg:col-span-3 rounded-[16px] border border-ink-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-            <div class="text-[15px] font-semibold text-ink-900">Évolution du taux d'adoption</div>
-            <div class="mb-3 text-[12px] text-ink-500">Adoptants cumulés / parents connus · repères métier annotés</div>
-            <div wire:ignore><div id="chart-adoption" class="h-[280px] w-full"></div></div>
-        </div>
-        <div class="lg:col-span-2 rounded-[16px] border border-ink-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-            <div class="text-[15px] font-semibold text-ink-900">Revenus</div>
-            <div class="mb-3 text-[12px] text-ink-500">Paiements (barres) · abonnements estimés (ligne) — M FCFA</div>
-            <div wire:ignore><div id="chart-revenue" class="h-[280px] w-full"></div></div>
-        </div>
-    </div>
+    {{-- ══════════ 2. POURQUOI ? ══════════ --}}
+    {!! $chapter(2, 'Pourquoi ?', 'Ce qui freine la conversion — et ce qui fait bouger la courbe', $leadWhy) !!}
 
-    {{-- ============ 5. Répartition ============ --}}
-    <div class="mt-8 mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-500">Répartition des parents</div>
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div class="rounded-[16px] border border-ink-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-            <div wire:ignore><div id="chart-donut" class="h-[240px] w-full"></div></div>
+            <div class="mb-1 text-[15px] font-semibold text-ink-900">L'entonnoir d'adoption</div>
+            <div wire:ignore><div id="chart-donut" class="h-[220px] w-full"></div></div>
         </div>
         <div class="lg:col-span-2 rounded-[16px] border border-ink-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
             <div class="mb-4 text-[15px] font-semibold text-ink-900">Où se situent les parents</div>
@@ -321,9 +341,55 @@ new class extends Component
         </div>
     </div>
 
-    {{-- ============ 6. Les écoles ============ --}}
-    <div class="mt-8 mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-500">Classement des écoles</div>
+    <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-5">
+        <div class="lg:col-span-3 rounded-[16px] border border-ink-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+            <div class="text-[15px] font-semibold text-ink-900">Évolution du taux d'adoption</div>
+            <div class="mb-3 text-[12px] text-ink-500">Adoptants cumulés / parents connus · repères métier annotés</div>
+            <div wire:ignore><div id="chart-adoption" class="h-[280px] w-full"></div></div>
+        </div>
+        <div class="lg:col-span-2 rounded-[16px] border border-ink-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+            <div class="text-[15px] font-semibold text-ink-900">Revenus</div>
+            <div class="mb-3 text-[12px] text-ink-500">Paiements (barres) · abonnements estimés (ligne) — M FCFA</div>
+            <div wire:ignore><div id="chart-revenue" class="h-[280px] w-full"></div></div>
+        </div>
+    </div>
+
+    {{-- ══════════ 3. QUELLES ÉCOLES NÉCESSITENT UNE ACTION ? ══════════ --}}
+    {!! $chapter(3, 'Quelles écoles nécessitent une action ?', 'Les établissements à traiter en priorité', $leadSchools) !!}
+
     <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div class="overflow-hidden rounded-[16px] border border-danger/25 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+            <div class="flex items-center gap-2 border-b border-ink-150 px-6 py-4">
+                <span class="flex h-6 w-6 items-center justify-center rounded-full bg-danger-soft text-danger">
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M10 6.5v4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="10" cy="14" r="1" fill="currentColor"/><path d="M8.6 3.5L2.5 15a1.5 1.5 0 001.3 2.2h12.4A1.5 1.5 0 0017.5 15L11.4 3.5a1.6 1.6 0 00-2.8 0z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+                </span>
+                <span class="text-[15px] font-semibold text-ink-900">Écoles nécessitant une action</span>
+            </div>
+            <table class="w-full border-collapse">
+                <thead>
+                    <tr class="bg-ink-50 text-[11px] font-bold uppercase tracking-wider text-ink-500">
+                        <th class="px-5 py-2.5 text-left">École</th>
+                        <th class="px-3 py-2.5 text-right">Adoption</th>
+                        <th class="px-3 py-2.5 text-left">Priorité</th>
+                        <th class="px-5 py-2.5 text-right">Gain pot.</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @forelse ($this->data['actionSchools'] as $sc)
+                        @php [$plabel, $pfg, $pbg] = $prioBadge[$sc['priority']]; @endphp
+                        <tr class="border-b border-ink-150 last:border-0 hover:bg-ink-50">
+                            <td class="px-5 py-3 text-[13px] font-semibold text-ink-900">{{ $sc['name'] }}</td>
+                            <td class="px-3 py-3 text-right font-mono text-[13px] font-semibold" style="color: {{ $sc['rate'] < 15 ? '#B91C1C' : '#B45F04' }}">{{ number_format($sc['rate'], 1, ',', ' ') }} %</td>
+                            <td class="px-3 py-3"><span class="inline-block rounded-full px-2 py-0.5 text-[11.5px] font-semibold" style="background: {{ $pbg }}; color: {{ $pfg }}">{{ $plabel }}</span></td>
+                            <td class="px-5 py-3 text-right font-mono text-[12.5px] text-ink-700">{{ $sc['potential'] > 0 ? $money($sc['potential']) : '—' }}</td>
+                        </tr>
+                    @empty
+                        <tr><td colspan="4" class="px-6 py-10 text-center text-[13px] text-ink-500">Aucune école en zone critique.</td></tr>
+                    @endforelse
+                </tbody>
+            </table>
+        </div>
+
         <div class="overflow-hidden rounded-[16px] border border-ink-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
             <div class="border-b border-ink-150 px-6 py-4 text-[15px] font-semibold text-ink-900">Top 10 des écoles</div>
             <table class="w-full border-collapse">
@@ -349,36 +415,11 @@ new class extends Component
                 </tbody>
             </table>
         </div>
-        <div class="overflow-hidden rounded-[16px] border border-ink-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-            <div class="border-b border-ink-150 px-6 py-4 text-[15px] font-semibold text-ink-900">Écoles nécessitant une action</div>
-            <table class="w-full border-collapse">
-                <thead>
-                    <tr class="bg-ink-50 text-[11px] font-bold uppercase tracking-wider text-ink-500">
-                        <th class="px-5 py-2.5 text-left">École</th>
-                        <th class="px-3 py-2.5 text-right">Adoption</th>
-                        <th class="px-3 py-2.5 text-left">Priorité</th>
-                        <th class="px-5 py-2.5 text-right">Gain pot.</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @forelse ($this->data['actionSchools'] as $sc)
-                        @php [$plabel, $pfg, $pbg] = $prioBadge[$sc['priority']]; @endphp
-                        <tr class="border-b border-ink-150 last:border-0 hover:bg-ink-50">
-                            <td class="px-5 py-3 text-[13px] font-semibold text-ink-900">{{ $sc['name'] }}</td>
-                            <td class="px-3 py-3 text-right font-mono text-[13px] font-semibold" style="color: {{ $sc['rate'] < 15 ? '#B91C1C' : '#B45F04' }}">{{ number_format($sc['rate'], 1, ',', ' ') }} %</td>
-                            <td class="px-3 py-3"><span class="inline-block rounded-full px-2 py-0.5 text-[11.5px] font-semibold" style="background: {{ $pbg }}; color: {{ $pfg }}">{{ $plabel }}</span></td>
-                            <td class="px-5 py-3 text-right font-mono text-[12.5px] text-ink-700">{{ $sc['potential'] > 0 ? $money($sc['potential']) : '—' }}</td>
-                        </tr>
-                    @empty
-                        <tr><td colspan="4" class="px-6 py-10 text-center text-[13px] text-ink-500">Aucune école en zone critique.</td></tr>
-                    @endforelse
-                </tbody>
-            </table>
-        </div>
     </div>
 
-    {{-- ============ 7. Opportunités ============ --}}
-    <div class="mt-8 mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-500">Opportunités</div>
+    {{-- ══════════ 4. QUEL EST LE POTENTIEL DE REVENUS RESTANT ? ══════════ --}}
+    {!! $chapter(4, 'Quel est le potentiel de revenus restant ?', "Le revenu d'abonnement encore dormant", $leadPotential) !!}
+
     <div class="rounded-[18px] border border-ink-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
         <div class="mb-5 flex items-center gap-2.5">
             <div class="flex h-8 w-8 items-center justify-center rounded-[9px] bg-brand-50 text-brand-600">
@@ -412,56 +453,59 @@ new class extends Component
         </div>
     </div>
 
-    {{-- ============ 8. Alertes + Recommandations ============ --}}
-    <div class="mt-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div>
-            <div class="mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-500">Alertes intelligentes</div>
-            <div class="rounded-[16px] border border-ink-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-                <div class="flex flex-col gap-1">
-                    @foreach ($this->data['alerts'] as $a)
-                        @php [$afg, $abg] = $alertStyle[$a['level']]; @endphp
-                        <div class="relative flex gap-3.5 pb-5 last:pb-0">
-                            @if (! $loop->last)<span class="absolute left-[15px] top-8 bottom-0 w-px bg-ink-150"></span>@endif
-                            <span class="relative z-10 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full" style="background: {{ $abg }}; color: {{ $afg }}">
-                                <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M10 6.5v4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="10" cy="13.8" r="1" fill="currentColor"/><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/></svg>
-                            </span>
-                            <div class="min-w-0 pt-0.5">
-                                <div class="flex flex-wrap items-center gap-2">
-                                    <span class="text-[13.5px] font-semibold text-ink-900">{{ $a['title'] }}</span>
-                                    <span class="rounded px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide" style="background: {{ $abg }}; color: {{ $afg }}">{{ $a['priority'] }}</span>
-                                </div>
-                                <div class="mt-0.5 text-[12.5px] leading-snug text-ink-600">{{ $a['detail'] }}</div>
-                            </div>
+    {{-- ══════════ 5. QUE FAUT-IL FAIRE AUJOURD'HUI ? ══════════ --}}
+    {!! $chapter(5, "Que faut-il faire aujourd'hui ?", 'Les actions prioritaires et les signaux à surveiller', $leadToday) !!}
+
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {{-- Recommandations (les actions) --}}
+        <div class="rounded-[16px] border border-brand-200 bg-brand-50/40 p-5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+            <div class="mb-3.5 flex items-center gap-2">
+                <span class="flex h-6 w-6 items-center justify-center rounded-full bg-brand-600 text-white">
+                    <svg width="13" height="13" viewBox="0 0 20 20" fill="none"><path d="M10 2.5a5.5 5.5 0 00-3 10.1V15h6v-2.4a5.5 5.5 0 00-3-10.1z" stroke="currentColor" stroke-width="1.6"/><path d="M8 17h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                </span>
+                <span class="text-[14px] font-bold text-ink-900">Recommandations</span>
+                <span class="rounded bg-white px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-ink-500">règles métier · v1</span>
+            </div>
+            <div class="flex flex-col gap-2.5">
+                @foreach ($recos as $r)
+                    @php [$rlabel, $rfg, $rbg] = $prioBadge[$r['priority']]; @endphp
+                    <div class="rounded-[13px] border border-ink-200 bg-white p-4">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="text-[13.5px] font-semibold leading-snug text-ink-900">{{ $r['title'] }}</div>
+                            <span class="flex-shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold" style="background: {{ $rbg }}; color: {{ $rfg }}">{{ $rlabel }}</span>
                         </div>
-                    @endforeach
-                </div>
+                        <div class="mt-1.5 text-[12.5px] leading-snug text-ink-600">{{ $r['why'] }}</div>
+                        <button class="mt-2.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-brand-600 hover:underline">
+                            Voir l'analyse
+                            <svg width="13" height="13" viewBox="0 0 20 20" fill="none"><path d="M7 4l6 6-6 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </button>
+                    </div>
+                @endforeach
             </div>
         </div>
 
-        <div>
-            <div class="mb-3 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-500">
-                Recommandations IA
-                <span class="rounded bg-ink-100 px-1.5 py-0.5 text-[9.5px] font-bold tracking-normal text-ink-500 normal-case">règles métier · v1</span>
+        {{-- Alertes (les signaux) --}}
+        <div class="rounded-[16px] border border-ink-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+            <div class="mb-3.5 flex items-center gap-2">
+                <span class="flex h-6 w-6 items-center justify-center rounded-full bg-ink-100 text-ink-700">
+                    <svg width="13" height="13" viewBox="0 0 20 20" fill="none"><path d="M5 8a5 5 0 0110 0c0 4 1.5 5 1.5 5h-13S5 12 5 8z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 16a2 2 0 004 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                </span>
+                <span class="text-[14px] font-bold text-ink-900">Alertes intelligentes</span>
             </div>
-            <div class="flex flex-col gap-3">
-                @foreach ($this->data['recommendations'] as $r)
-                    @php [$rlabel, $rfg, $rbg] = $prioBadge[$r['priority']]; @endphp
-                    <div class="rounded-[14px] border border-ink-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-                        <div class="flex items-start justify-between gap-3">
-                            <div class="flex items-start gap-2.5">
-                                <span class="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-600">
-                                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none"><path d="M10 2.5a5.5 5.5 0 00-3 10.1V15h6v-2.4a5.5 5.5 0 00-3-10.1z" stroke="currentColor" stroke-width="1.5"/><path d="M8 17h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-                                </span>
-                                <div class="text-[13.5px] font-semibold leading-snug text-ink-900">{{ $r['title'] }}</div>
+            <div class="flex flex-col gap-1">
+                @foreach ($this->data['alerts'] as $a)
+                    @php [$afg, $abg] = $alertStyle[$a['level']]; @endphp
+                    <div class="relative flex gap-3.5 pb-5 last:pb-0">
+                        @if (! $loop->last)<span class="absolute left-[15px] top-8 bottom-0 w-px bg-ink-150"></span>@endif
+                        <span class="relative z-10 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full" style="background: {{ $abg }}; color: {{ $afg }}">
+                            <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M10 6.5v4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="10" cy="13.8" r="1" fill="currentColor"/><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/></svg>
+                        </span>
+                        <div class="min-w-0 pt-0.5">
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="text-[13.5px] font-semibold text-ink-900">{{ $a['title'] }}</span>
+                                <span class="rounded px-1.5 py-0.5 text-[10.5px] font-bold uppercase tracking-wide" style="background: {{ $abg }}; color: {{ $afg }}">{{ $a['priority'] }}</span>
                             </div>
-                            <span class="flex-shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold" style="background: {{ $rbg }}; color: {{ $rfg }}">{{ $rlabel }}</span>
-                        </div>
-                        <div class="mt-2 pl-[34px] text-[12.5px] leading-snug text-ink-600">{{ $r['why'] }}</div>
-                        <div class="mt-2.5 pl-[34px]">
-                            <button class="inline-flex items-center gap-1 text-[12.5px] font-semibold text-brand-600 hover:underline">
-                                Voir l'analyse
-                                <svg width="13" height="13" viewBox="0 0 20 20" fill="none"><path d="M7 4l6 6-6 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                            </button>
+                            <div class="mt-0.5 text-[12.5px] leading-snug text-ink-600">{{ $a['detail'] }}</div>
                         </div>
                     </div>
                 @endforeach
@@ -480,7 +524,6 @@ new class extends Component
         const axisLabel = { color: '#B7BCC5', fontFamily: inter, fontSize: 11 };
         const charts = [];
 
-        // --- Adoption : area + dégradé + annotations métier ---
         const adoptionEl = document.getElementById('chart-adoption');
         if (adoptionEl) {
             const c = window.echarts.init(adoptionEl);
@@ -509,7 +552,6 @@ new class extends Component
             charts.push(c);
         }
 
-        // --- Revenus : barres (paiements) + ligne (abonnements) ---
         const revenueEl = document.getElementById('chart-revenue');
         if (revenueEl) {
             const c = window.echarts.init(revenueEl);
@@ -530,7 +572,6 @@ new class extends Component
             charts.push(c);
         }
 
-        // --- Donut ---
         const donutEl = document.getElementById('chart-donut');
         if (donutEl) {
             const c = window.echarts.init(donutEl);
@@ -538,7 +579,7 @@ new class extends Component
             c.setOption({
                 tooltip: { trigger: 'item', formatter: '{b}<br/>{c} ({d}%)' },
                 series: [{
-                    type: 'pie', radius: ['60%', '84%'], center: ['50%', '50%'], avoidLabelOverlap: false,
+                    type: 'pie', radius: ['58%', '82%'], center: ['50%', '50%'], avoidLabelOverlap: false,
                     label: { show: true, position: 'center', formatter: () => 'Parents\n' + total.toLocaleString('fr-FR'), fontFamily: inter, fontSize: 13, fontWeight: 600, color: '#14181f', lineHeight: 18 },
                     labelLine: { show: false },
                     itemStyle: { borderColor: '#fff', borderWidth: 2 },
