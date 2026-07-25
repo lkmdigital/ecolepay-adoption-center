@@ -31,18 +31,29 @@ return [
     | Règle d'adoption
     |---------------------------------------------------------------------------
     |
-    | Ces seuils définissent deux des six états de l'entonnoir. Ils alimentent la
-    | première ligne de `dim_adoption_rule_versions` ; les modifier ensuite suppose
-    | de créer une nouvelle version, jamais d'écraser l'existante.
+    | EcolePay est une app de paiement SAISONNIÈRE, sans autre fonctionnalité pour
+    | l'instant : un parent qui a payé n'a plus rien à y faire jusqu'à l'an prochain.
+    | L'inactivité en jours n'est donc PAS un signal de décrochage. Le statut vivant
+    | se calcule par ANNÉE SCOLAIRE : a-t-il payé via l'app cette année ?
     |
-    | Calibrage : les paiements scolaires sont trimestriels, donc espacés de ~90
-    | jours. Un seuil fondé sur les seuls paiements classerait tout le monde « à
-    | risque » entre deux trimestres. C'est pourquoi l'activité comptabilisée inclut
-    | les consultations et exclut la réception passive de notifications.
+    |   - écart 0 (payé cette année scolaire)              → engagé (ou adoptant si 1re année)
+    |   - écart 1, dans la fenêtre de paiement (sept→janv) → engagé (tolérance)
+    |   - écart 1, fenêtre fermée                          → à risque
+    |   - écart >= 2 années                                → perdu
+    |
+    | Versionné dans `dim_adoption_rule_versions` : re-réglable plus tard (ex. quand
+    | les notes/devoirs ajouteront un signal d'usage hors paiement).
     |
     */
 
     'adoption' => [
+        // Frontière d'année scolaire (rentrée nationale ivoirienne).
+        'school_year_start_month' => env('EAC_SCHOOL_YEAR_START_MONTH', 9),
+        // Fin de la fenêtre de tolérance de renouvellement (janvier).
+        'payment_window_end_month' => env('EAC_PAYMENT_WINDOW_END_MONTH', 1),
+
+        // Anciens seuils en jours — conservés pour compatibilité, non utilisés par
+        // le calcul par année scolaire.
         'at_risk_after_days' => env('EAC_AT_RISK_DAYS', 60),
         'lost_after_days' => env('EAC_LOST_DAYS', 120),
         'engaged_min_payments' => env('EAC_ENGAGED_MIN_PAYMENTS', 2),
