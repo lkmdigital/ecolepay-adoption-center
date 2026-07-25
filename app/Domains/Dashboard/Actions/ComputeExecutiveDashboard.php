@@ -24,20 +24,27 @@ final class ComputeExecutiveDashboard
         7 => 'juil.', 8 => 'août', 9 => 'sept.', 10 => 'oct.', 11 => 'nov.', 12 => 'déc.',
     ];
 
-    /** @var array<string, int> jours de la fenêtre par période. */
-    private const WINDOWS = ['7d' => 7, '30d' => 30, 'year' => 365];
+    /** @var array<string, string> périodes proposées dans le panneau de filtres. */
+    public const PERIODS = [
+        'today' => "Aujourd'hui",
+        'yesterday' => 'Hier',
+        '7d' => '7 derniers jours',
+        '30d' => '30 derniers jours',
+        'this_month' => 'Ce mois',
+        'last_month' => 'Mois précédent',
+        'this_year' => 'Cette année',
+        'school_year' => 'Année scolaire',
+    ];
 
-    public function __invoke(string $period = 'year'): array
+    public function __invoke(string $period = 'school_year', string $comparison = 'previous'): array
     {
-        $window = self::WINDOWS[$period] ?? 365;
-        // La variation période-sur-période n'a de sens que sur une fenêtre courte :
-        // l'historique source ne couvre qu'~15 mois, donc « année vs année » compare
-        // à une période quasi vide. Sur la vue Année scolaire, on montre les séries,
-        // pas de faux delta.
-        $withDelta = $period !== 'year';
+        [$start, $end] = $this->resolveRange($period);
+        [$prevStart, $prevEnd] = $this->comparisonRange($start, $end, $comparison);
 
         return [
-            'kpis' => $this->kpis($window, $withDelta),
+            'period' => $period,
+            'kpis' => $this->kpis($start, $end, $prevStart, $prevEnd),
+            'situation' => $this->situation(),
             'health' => $this->health(),
             'repartition' => $this->repartition(),
             'topSchools' => $this->topSchools(),
@@ -48,80 +55,158 @@ final class ComputeExecutiveDashboard
         ];
     }
 
+    /* ------------------------------------------------------------- Périodes */
+
+    /** @return array{0: Carbon, 1: Carbon} */
+    private function resolveRange(string $period): array
+    {
+        $now = Carbon::now();
+
+        return match ($period) {
+            'today' => [$now->copy()->startOfDay(), $now->copy()],
+            'yesterday' => [$now->copy()->subDay()->startOfDay(), $now->copy()->subDay()->endOfDay()],
+            '7d' => [$now->copy()->subDays(7), $now->copy()],
+            '30d' => [$now->copy()->subDays(30), $now->copy()],
+            'this_month' => [$now->copy()->startOfMonth(), $now->copy()],
+            'last_month' => [$now->copy()->subMonthNoOverflow()->startOfMonth(), $now->copy()->subMonthNoOverflow()->endOfMonth()],
+            'this_year' => [$now->copy()->startOfYear(), $now->copy()],
+            default => [$this->schoolYearStart($now), $now->copy()],
+        };
+    }
+
+    /** @return array{0: Carbon, 1: Carbon} */
+    private function comparisonRange(Carbon $start, Carbon $end, string $comparison): array
+    {
+        if ($comparison === 'year') {
+            return [$start->copy()->subYear(), $end->copy()->subYear()];
+        }
+
+        // Période précédente : même durée, juste avant.
+        $length = $start->diffInSeconds($end);
+
+        return [$start->copy()->subSeconds($length), $start->copy()];
+    }
+
+    private function schoolYearStart(Carbon $now): Carbon
+    {
+        $startMonth = (int) config('eac.school_year_start_month', 9);
+        $year = $now->month >= $startMonth ? $now->year : $now->year - 1;
+
+        return Carbon::create($year, $startMonth, 1)->startOfDay();
+    }
+
     /* ---------------------------------------------------------------- KPIs */
 
     /**
-     * Les 8 indicateurs de tête, chacun avec sa variation sur la fenêtre et,
-     * quand une date le permet, une mini-série (sparkline) sur 6 mois.
+     * KPI hiérarchisés : d'abord les résultats stratégiques que le DG regarde,
+     * puis la volumétrie de contexte.
      */
-    private function kpis(int $window, bool $withDelta): array
+    private function kpis(Carbon $start, Carbon $end, Carbon $prevStart, Carbon $prevEnd): array
     {
-        $d = fn (callable $compute) => $withDelta ? $compute() : null;
-
         $connus = (int) DB::table('dim_parents')->where('is_test', false)->count();
         $inscrits = (int) DB::table('dim_parents')->where('is_test', false)->whereNotNull('account_created_at')->count();
         $actifs = (int) DB::table('fact_parent_journeys')->where('is_test', false)->where('has_ever_paid', true)->distinct()->count('parent_id');
         $ecoles = (int) DB::table('dim_schools')->where('is_test', false)->whereNotNull('is_current')->count();
         $eleves = (int) DB::table('dim_students')->where('is_test', false)->count();
         $revenue = (int) $this->paymentsQuery()->sum('amount');
-        $subRevenue = $this->realizedSubscriptionRevenue();
+        $potential = $this->potentialSubscriptionRevenue();
         $adoption = $connus > 0 ? round($actifs / $connus * 100, 1) : 0.0;
 
         $spark = $this->sparklines();
 
         return [
-            ['key' => 'ecoles', 'label' => 'Écoles', 'value' => $ecoles, 'format' => 'int', 'delta' => null, 'spark' => null, 'sub' => 'établissements suivis'],
-            ['key' => 'eleves', 'label' => 'Élèves', 'value' => $eleves, 'format' => 'int', 'delta' => null, 'spark' => null, 'sub' => 'sur les listes des écoles'],
-            // Pas de variation/série : first_known_at reflète la date de synchro, pas une acquisition réelle.
-            ['key' => 'parents', 'label' => 'Parents connus', 'value' => $connus, 'format' => 'int', 'delta' => null, 'spark' => null, 'sub' => 'contacts identifiés'],
-            ['key' => 'inscrits', 'label' => 'Parents inscrits', 'value' => $inscrits, 'format' => 'int', 'delta' => $d(fn () => $this->deltaByDate('dim_parents', 'account_created_at', $window)), 'spark' => $spark['inscrits'], 'sub' => 'ont créé un compte'],
-            ['key' => 'actifs', 'label' => 'Parents actifs', 'value' => $actifs, 'format' => 'int', 'delta' => $d(fn () => $this->deltaAdopters($window)), 'spark' => $spark['actifs'], 'sub' => 'ont payé via l\'app'],
-            ['key' => 'adoption', 'label' => 'Taux d\'adoption', 'value' => $adoption, 'format' => 'pct', 'delta' => null, 'spark' => $spark['adoption'], 'sub' => 'le chiffre suivi par la Direction'],
-            ['key' => 'ca_sub', 'label' => 'CA abonnements', 'value' => $subRevenue, 'format' => 'money', 'delta' => null, 'spark' => null, 'sub' => 'estimé · débloqué par les adoptants'],
-            ['key' => 'ca_pay', 'label' => 'CA paiements', 'value' => $revenue, 'format' => 'money', 'delta' => $d(fn () => $this->deltaRevenue($window)), 'spark' => $spark['revenue'], 'sub' => 'volume payé via l\'app'],
+            'strategic' => [
+                ['key' => 'adoption', 'label' => 'Adoption globale', 'value' => $adoption, 'format' => 'pct', 'delta' => $this->adoptionDelta($connus, $prevEnd), 'spark' => $spark['adoption'], 'sub' => 'le chiffre suivi par la Direction'],
+                ['key' => 'actifs', 'label' => 'Parents actifs', 'value' => $actifs, 'format' => 'int', 'delta' => $this->deltaAdopters($start, $end, $prevStart, $prevEnd), 'spark' => $spark['actifs'], 'sub' => "ont payé via l'app"],
+                ['key' => 'ca_pay', 'label' => 'Revenu paiements', 'value' => $revenue, 'format' => 'money', 'delta' => $this->deltaRevenue($start, $end, $prevStart, $prevEnd), 'spark' => $spark['revenue'], 'sub' => "volume payé via l'app"],
+                ['key' => 'potentiel', 'label' => 'Potentiel restant', 'value' => $potential, 'format' => 'money', 'delta' => null, 'spark' => null, 'sub' => 'abonnements non débloqués · estimé'],
+            ],
+            'secondary' => [
+                ['key' => 'ecoles', 'label' => 'Écoles', 'value' => $ecoles, 'format' => 'int', 'delta' => null, 'spark' => null, 'sub' => 'établissements suivis'],
+                ['key' => 'eleves', 'label' => 'Élèves', 'value' => $eleves, 'format' => 'int', 'delta' => null, 'spark' => null, 'sub' => 'sur les listes des écoles'],
+                ['key' => 'parents', 'label' => 'Parents connus', 'value' => $connus, 'format' => 'int', 'delta' => null, 'spark' => null, 'sub' => 'contacts identifiés'],
+                ['key' => 'inscrits', 'label' => 'Parents inscrits', 'value' => $inscrits, 'format' => 'int', 'delta' => $this->deltaByDate('dim_parents', 'account_created_at', $start, $end, $prevStart, $prevEnd), 'spark' => $spark['inscrits'], 'sub' => 'ont créé un compte'],
+            ],
         ];
     }
 
-    /** Variation d'un compte daté : fenêtre courante vs précédente, en %. */
-    private function deltaByDate(string $table, string $col, int $window): ?array
+    /**
+     * Carte « Situation actuelle » : le résumé unique que le DG lit en premier.
+     */
+    private function situation(): array
     {
-        $now = Carbon::now();
-        $current = (int) DB::table($table)->where('is_test', false)
-            ->whereBetween($col, [$now->copy()->subDays($window), $now])->count();
-        $previous = (int) DB::table($table)->where('is_test', false)
-            ->whereBetween($col, [$now->copy()->subDays($window * 2), $now->copy()->subDays($window)])->count();
+        $connus = (int) DB::table('dim_parents')->where('is_test', false)->count();
+        $actifs = (int) DB::table('fact_parent_journeys')->where('is_test', false)->where('has_ever_paid', true)->distinct()->count('parent_id');
+        $rate = $connus > 0 ? round($actifs / $connus * 100, 1) : 0.0;
+
+        // Élan sur 30 jours, exprimé en points d'adoption.
+        $adopters30 = (int) DB::table('fact_parent_journeys')->where('is_test', false)
+            ->where('first_payment_at', '>=', Carbon::now()->subDays(30))->distinct()->count('parent_id');
+        $deltaPts = $connus > 0 ? round($adopters30 / $connus * 100, 1) : 0.0;
+
+        return [
+            'adoptionRate' => $rate,
+            'deltaPts' => $deltaPts,
+            'nonAdopters' => max($connus - $actifs, 0),
+            'potentialRevenue' => $this->potentialSubscriptionRevenue(),
+            'urgentSchools' => $this->urgentSchoolsCount(),
+        ];
+    }
+
+    /** Variation d'adoption en points : taux actuel vs taux à la fin de la période de comparaison. */
+    private function adoptionDelta(int $connus, Carbon $prevEnd): ?array
+    {
+        if ($connus === 0) {
+            return null;
+        }
+        $now = (int) DB::table('fact_parent_journeys')->where('is_test', false)->whereNotNull('first_payment_at')->distinct()->count('parent_id');
+        $then = (int) DB::table('fact_parent_journeys')->where('is_test', false)
+            ->whereNotNull('first_payment_at')->where('first_payment_at', '<=', $prevEnd)->distinct()->count('parent_id');
+
+        $pts = round(($now - $then) / $connus * 100, 1);
+        if ($pts == 0.0) {
+            return null;
+        }
+
+        return ['dir' => $pts >= 0 ? 'up' : 'down', 'pts' => abs($pts)];
+    }
+
+    private function deltaByDate(string $table, string $col, Carbon $start, Carbon $end, Carbon $prevStart, Carbon $prevEnd): ?array
+    {
+        $current = (int) DB::table($table)->where('is_test', false)->whereBetween($col, [$start, $end])->count();
+        $previous = (int) DB::table($table)->where('is_test', false)->whereBetween($col, [$prevStart, $prevEnd])->count();
 
         return $this->delta($current, $previous);
     }
 
-    private function deltaAdopters(int $window): ?array
+    private function deltaAdopters(Carbon $start, Carbon $end, Carbon $prevStart, Carbon $prevEnd): ?array
     {
-        $now = Carbon::now();
-        $current = (int) DB::table('fact_parent_journeys')->where('is_test', false)
-            ->whereBetween('first_payment_at', [$now->copy()->subDays($window), $now])->distinct()->count('parent_id');
-        $previous = (int) DB::table('fact_parent_journeys')->where('is_test', false)
-            ->whereBetween('first_payment_at', [$now->copy()->subDays($window * 2), $now->copy()->subDays($window)])->distinct()->count('parent_id');
+        $current = (int) DB::table('fact_parent_journeys')->where('is_test', false)->whereBetween('first_payment_at', [$start, $end])->distinct()->count('parent_id');
+        $previous = (int) DB::table('fact_parent_journeys')->where('is_test', false)->whereBetween('first_payment_at', [$prevStart, $prevEnd])->distinct()->count('parent_id');
 
         return $this->delta($current, $previous);
     }
 
-    private function deltaRevenue(int $window): ?array
+    private function deltaRevenue(Carbon $start, Carbon $end, Carbon $prevStart, Carbon $prevEnd): ?array
     {
-        $now = Carbon::now();
-        $current = (int) $this->paymentsQuery()->whereBetween('paid_at', [$now->copy()->subDays($window), $now])->sum('amount');
-        $previous = (int) $this->paymentsQuery()->whereBetween('paid_at', [$now->copy()->subDays($window * 2), $now->copy()->subDays($window)])->sum('amount');
+        $current = (int) $this->paymentsQuery()->whereBetween('paid_at', [$start, $end])->sum('amount');
+        $previous = (int) $this->paymentsQuery()->whereBetween('paid_at', [$prevStart, $prevEnd])->sum('amount');
 
         return $this->delta($current, $previous);
     }
 
+    /**
+     * Variation en %. On renvoie null quand la période de comparaison est vide :
+     * l'historique source ne couvre qu'~15 mois, un faux « nouveau » induirait en erreur.
+     */
     private function delta(int $current, int $previous): ?array
     {
         if ($previous === 0) {
-            return $current > 0 ? ['dir' => 'up', 'pct' => null, 'raw' => $current] : null;
+            return null;
         }
         $pct = round(($current - $previous) / $previous * 100, 1);
 
-        return ['dir' => $pct >= 0 ? 'up' : 'down', 'pct' => abs($pct), 'raw' => $current];
+        return ['dir' => $pct >= 0 ? 'up' : 'down', 'pct' => abs($pct)];
     }
 
     /* -------------------------------------------------------------- Séries */
@@ -141,7 +226,8 @@ final class ComputeExecutiveDashboard
 
     /**
      * Santé globale : évolution du taux d'adoption (cumulatif) et des revenus
-     * (paiements réels + abonnements estimés) sur 12 mois.
+     * (paiements réels + abonnements estimés) sur 12 mois, plus les événements
+     * métier réels (rentrée scolaire) à annoter sous la courbe.
      */
     private function health(): array
     {
@@ -160,28 +246,37 @@ final class ComputeExecutiveDashboard
             $adoptionRate[] = round($cumulative / $connus * 100, 1);
         }
 
+        // Événements réels : la rentrée scolaire (mois de septembre présents dans la fenêtre).
+        $startMonth = (int) config('eac.school_year_start_month', 9);
+        $events = [];
+        foreach ($keys as $i => $k) {
+            if ((int) substr($k['key'], 5, 2) === $startMonth) {
+                $events[] = ['index' => $i, 'label' => 'Rentrée scolaire'];
+            }
+        }
+
         return [
             'labels' => array_column($keys, 'label'),
             'adoptionRate' => $adoptionRate,
+            'newAdopters' => $newAdopters,
             'revenue' => array_map(fn ($v) => round($v / 1_000_000, 2), $revenue),
             'subRevenue' => array_map(fn ($v) => round($v / 1_000_000, 2), $subRevenue),
+            'events' => $events,
         ];
     }
 
     /* ---------------------------------------------------------- Répartition */
 
     /**
-     * Donut des parents, au grain parent (dédupliqué), par état le plus avancé.
+     * Donut des parents, cohérent avec les KPI de tête (la somme = total parents).
      * On ne suit pas de « parents inconnus » : le premier segment est donc les
      * connus non inscrits.
      */
     private function repartition(): array
     {
-        // Partition cohérente avec les KPI de tête (somme = total des parents).
         $connus = (int) DB::table('dim_parents')->where('is_test', false)->count();
         $inscrits = (int) DB::table('dim_parents')->where('is_test', false)->whereNotNull('account_created_at')->count();
         $actifs = (int) DB::table('fact_parent_journeys')->where('is_test', false)->where('has_ever_paid', true)->distinct()->count('parent_id');
-        // Inactifs : payeurs dont le parcours le plus avancé est « à risque » ou « perdu ».
         $inactifs = (int) DB::query()->fromSub(
             DB::table('dim_parents')
                 ->join('fact_parent_journeys as j', 'j.parent_id', '=', 'dim_parents.id')
@@ -223,7 +318,6 @@ final class ComputeExecutiveDashboard
         $adopters = (int) $r->adopters;
         $rate = $known > 0 ? round($adopters / $known * 100, 1) : 0.0;
         $nonAdopters = max($known - $adopters, 0);
-        // Potentiel = abonnements non débloqués, uniquement là où le parent paie.
         $potential = $r->subscription_model === 'parent_paid' ? $nonAdopters * (int) $r->subscription_amount : 0;
 
         return [
@@ -238,17 +332,12 @@ final class ComputeExecutiveDashboard
         ];
     }
 
-    /** Top 10 par nombre d'adoptants. */
     private function topSchools(): array
     {
         return $this->schoolMetrics()->orderByDesc('adopters')->limit(10)->get()
             ->map(fn ($r) => $this->decorateSchool($r))->all();
     }
 
-    /**
-     * Écoles nécessitant une action : adoption < 25 % sur une base significative,
-     * les plus « lourdes » d'abord (potentiel le plus élevé).
-     */
     private function actionSchools(): array
     {
         return $this->schoolMetrics()->having('known', '>=', 20)
@@ -256,7 +345,6 @@ final class ComputeExecutiveDashboard
             ->get()
             ->map(fn ($r) => $this->decorateSchool($r))
             ->map(function ($s) {
-                // Priorité : combinaison de la taille et du déficit d'adoption.
                 $s['priority'] = $s['known'] >= 100 && $s['rate'] < 15 ? 'critique'
                     : ($s['known'] >= 50 || $s['rate'] < 15 ? 'elevee' : 'moyenne');
 
@@ -265,7 +353,6 @@ final class ComputeExecutiveDashboard
             ->sortByDesc('potential')->take(6)->values()->all();
     }
 
-    /** Cinq meilleures opportunités de revenu (potentiel d'abonnement le plus élevé). */
     private function opportunities(): array
     {
         return $this->schoolMetrics()->having('known', '>=', 20)->get()
@@ -274,29 +361,27 @@ final class ComputeExecutiveDashboard
             ->sortByDesc('potential')->take(5)->values()->all();
     }
 
+    /** Nombre d'écoles à intervention prioritaire (adoption < 25 %, base ≥ 20). */
+    private function urgentSchoolsCount(): int
+    {
+        return $this->schoolMetrics()->having('known', '>=', 20)
+            ->havingRaw('COUNT(DISTINCT CASE WHEN j.has_ever_paid = 1 THEN j.parent_id END) / COUNT(DISTINCT j.parent_id) < 0.25')
+            ->get()->count();
+    }
+
     /* -------------------------------------------------------------- Alertes */
 
-    /**
-     * Alertes générées à partir des vraies données (pas de campagne : le module
-     * n'existe pas encore).
-     */
     private function alerts(): array
     {
         $now = Carbon::now();
         $alerts = [];
 
-        $urgent = $this->schoolMetrics()->having('known', '>=', 20)
-            ->havingRaw('COUNT(DISTINCT CASE WHEN j.has_ever_paid = 1 THEN j.parent_id END) / COUNT(DISTINCT j.parent_id) < 0.25')
-            ->get()->count();
+        $urgent = $this->urgentSchoolsCount();
         if ($urgent > 0) {
             $alerts[] = ['level' => 'danger', 'priority' => 'Critique', 'title' => "{$urgent} écoles sous 25 % d'adoption", 'detail' => 'Base significative (≥ 20 parents connus). Intervention prioritaire recommandée.'];
         }
 
-        $registeredNotPaid = (int) DB::table('dim_parents')->where('is_test', false)
-            ->whereNotNull('account_created_at')
-            ->whereNotExists(fn ($q) => $q->from('fact_parent_journeys as j')
-                ->whereColumn('j.parent_id', 'dim_parents.id')->where('j.has_ever_paid', true)->where('j.is_test', false))
-            ->count();
+        $registeredNotPaid = $this->registeredNotPaidCount();
         if ($registeredNotPaid > 0) {
             $alerts[] = ['level' => 'warning', 'priority' => 'Élevée', 'title' => "{$registeredNotPaid} parents inscrits sans premier paiement", 'detail' => "Comptes créés mais jamais convertis : cible directe d'activation."];
         }
@@ -318,10 +403,6 @@ final class ComputeExecutiveDashboard
 
     /* ------------------------------------------------------ Recommandations */
 
-    /**
-     * Recommandations dérivées de règles métier (pas d'IA générative : le module
-     * Assistant IA viendra plus tard). Chaque carte porte une justification chiffrée.
-     */
     private function recommendations(): array
     {
         $recos = [];
@@ -337,8 +418,7 @@ final class ComputeExecutiveDashboard
             ];
         }
 
-        $relance = (int) DB::table('dim_parents')->where('is_test', false)
-            ->whereNull('account_created_at')->count();
+        $relance = (int) DB::table('dim_parents')->where('is_test', false)->whereNull('account_created_at')->count();
         if ($relance > 0) {
             $recos[] = [
                 'priority' => 'elevee',
@@ -347,11 +427,7 @@ final class ComputeExecutiveDashboard
             ];
         }
 
-        $registeredNotPaid = (int) DB::table('dim_parents')->where('is_test', false)
-            ->whereNotNull('account_created_at')
-            ->whereNotExists(fn ($q) => $q->from('fact_parent_journeys as j')
-                ->whereColumn('j.parent_id', 'dim_parents.id')->where('j.has_ever_paid', true)->where('j.is_test', false))
-            ->count();
+        $registeredNotPaid = $this->registeredNotPaidCount();
         if ($registeredNotPaid > 0) {
             $recos[] = [
                 'priority' => 'elevee',
@@ -379,14 +455,22 @@ final class ComputeExecutiveDashboard
         return DB::table('fact_payments')->where('is_test', false)->where('is_manual', false)->where('status', 'success');
     }
 
-    /** Revenu d'abonnement réalisé : abonnement débloqué par chaque adoptant (parent_paid). */
-    private function realizedSubscriptionRevenue(): int
+    private function potentialSubscriptionRevenue(): int
     {
         return (int) DB::table('fact_parent_journeys as j')
             ->join('dim_schools as s', 's.id', '=', 'j.school_id')
-            ->where('j.is_test', false)->where('j.has_ever_paid', true)
+            ->where('j.is_test', false)->where('j.has_ever_paid', false)
             ->where('s.subscription_model', 'parent_paid')
             ->sum('s.subscription_amount');
+    }
+
+    private function registeredNotPaidCount(): int
+    {
+        return (int) DB::table('dim_parents')->where('is_test', false)
+            ->whereNotNull('account_created_at')
+            ->whereNotExists(fn ($q) => $q->from('fact_parent_journeys as j')
+                ->whereColumn('j.parent_id', 'dim_parents.id')->where('j.has_ever_paid', true)->where('j.is_test', false))
+            ->count();
     }
 
     /** @return list<array{key: string, label: string}> */
