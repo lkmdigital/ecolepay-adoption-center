@@ -62,7 +62,7 @@ final class ComputeSchoolProfile
                 'inscritsInactifs' => max($f['inscrits'] - $f['actifs'], 0),
             ],
             'health' => $health,
-            'summary' => $this->execSummary($f, $rate, $health['score']),
+            'diagnostic' => $this->diagnostic($f, $rate, $nonAdopters, (int) $s->subscription_amount, $s->subscription_model),
             'adoption' => $this->adoptionSeries($schoolId, $f['known']),
             'funnel' => $this->funnel($f),
             'repartition' => $this->repartition($f),
@@ -105,26 +105,91 @@ final class ComputeSchoolProfile
         return ['revenue' => (int) $row->revenue, 'count' => (int) $row->c, 'first' => $row->first_at, 'last' => $row->last_at];
     }
 
-    /** Résumé exécutif généré : identifie le frein principal de l'entonnoir. */
-    private function execSummary(array $f, float $rate, int $score): string
+    /**
+     * Diagnostic d'adoption : interprète l'entonnoir plutôt que de le décrire.
+     * Localise le frein principal (inscription vs activation), formule la priorité
+     * et chiffre le gain atteignable (parents supplémentaires + revenu annuel estimé).
+     *
+     * @return array{headline: string, text: string, registrationRate: float, activationRate: float,
+     *     registrationLabel: string, activationLabel: string, bottleneck: string, tone: string,
+     *     color: string, bg: string, targetParents: int, annualRevenue: int, lever: string}
+     */
+    private function diagnostic(array $f, float $rate, int $nonAdopters, int $subAmount, string $model): array
     {
-        $reg = $f['known'] > 0 ? $f['inscrits'] / $f['known'] * 100 : 0;
-        $act = $f['inscrits'] > 0 ? $f['actifs'] / $f['inscrits'] * 100 : 0;
-        $r = number_format($rate, 0, ',', ' ');
+        $reg = $f['known'] > 0 ? round($f['inscrits'] / $f['known'] * 100, 1) : 0.0;
+        $act = $f['inscrits'] > 0 ? round($f['actifs'] / $f['inscrits'] * 100, 1) : 0.0;
+        $regL = $this->rateLabel($reg);
+        $actL = $this->rateLabel($act);
+        $pp = $model === 'parent_paid';
+        $pct = fn ($v) => number_format($v, 0, ',', ' ').' %';
+        $rev = fn ($n) => $n >= 1_000_000 ? number_format($n / 1_000_000, 1, ',', ' ').' millions FCFA' : number_format($n, 0, ',', ' ').' FCFA';
 
+        // Base insuffisante : aucun diagnostic fiable possible.
         if ($f['known'] < 15) {
-            return "Base trop faible pour conclure ({$f['known']} parents connus). Priorité : importer la liste complète des parents et fiabiliser les numéros avant toute campagne.";
+            return [
+                'headline' => 'Base insuffisante pour conclure',
+                'text' => "La base est trop faible ({$f['known']} parents connus) pour un diagnostic fiable. La priorité est d'importer la liste complète des parents de l'établissement et de fiabiliser les numéros avant toute campagne.",
+                'registrationRate' => $reg, 'activationRate' => $act,
+                'registrationLabel' => $regL, 'activationLabel' => $actL,
+                'bottleneck' => 'base', 'tone' => 'Base à consolider', 'color' => '#B91C1C', 'bg' => '#FDECEC',
+                'targetParents' => 0, 'annualRevenue' => 0, 'lever' => 'Importer et fiabiliser la liste des parents',
+            ];
         }
 
-        if ($reg < 45) {
-            return "L'adoption est de {$r} %. Le principal frein est le faible nombre de comptes créés (".number_format($reg, 0, ',', ' ')." % des parents connus). Une fois inscrits, les parents activent l'application à ".number_format($act, 0, ',', ' ')." %. Une campagne WhatsApp ciblée et une communication renforcée avec l'établissement sont recommandées.";
+        // Le frein est l'étape la plus faible de l'entonnoir, sous le seuil « bon ».
+        if ($reg <= $act && $reg < 55) {
+            $target = max($f['known'] - $f['inscrits'], 0);
+            $revenue = $pp ? $target * $subAmount : 0;
+            // Contraste seulement si l'activation est réellement bonne ; sinon les deux étapes sont faibles.
+            $middle = $act >= 55
+                ? "mais un taux d'activation {$actL} ({$pct($act)} des parents inscrits effectuent un paiement). Cela indique que le principal problème se situe avant la création du compte."
+                : "et un taux d'activation lui aussi {$actL} ({$pct($act)}). Les deux étapes sont à renforcer, en commençant par l'inscription : on ne peut pas activer des parents qui n'ont pas encore de compte.";
+
+            return [
+                'headline' => "Frein principal : l'inscription ({$pct($reg)})",
+                'text' => "L'école présente un taux d'inscription {$regL} ({$pct($reg)}), {$middle} La priorité est d'augmenter le nombre de parents inscrits grâce à une campagne WhatsApp ciblée et à une meilleure communication de l'établissement. Le potentiel estimé est de ".number_format($target, 0, ',', ' ').' parents supplémentaires'.($pp ? ", représentant environ {$rev($revenue)} de revenus annuels." : '.'),
+                'registrationRate' => $reg, 'activationRate' => $act,
+                'registrationLabel' => $regL, 'activationLabel' => $actL,
+                'bottleneck' => 'registration', 'tone' => 'Frein : inscription', 'color' => '#B45F04', 'bg' => '#FEF3E2',
+                'targetParents' => $target, 'annualRevenue' => $revenue, 'lever' => 'Lancer une campagne WhatsApp d\'inscription',
+            ];
         }
 
-        if ($act < 45) {
-            return "L'adoption est de {$r} %. Les parents s'inscrivent bien (".number_format($reg, 0, ',', ' ').' %), mais peu franchissent le premier paiement ('.number_format($act, 0, ',', ' ')." % des inscrits). Le frein est l'activation : un rappel ciblé et un accompagnement au premier paiement sont recommandés.";
+        if ($act < 55) {
+            $target = max($f['inscrits'] - $f['actifs'], 0);
+            $revenue = $pp ? $target * $subAmount : 0;
+
+            return [
+                'headline' => "Frein principal : l'activation ({$pct($act)})",
+                'text' => "L'école affiche un taux d'inscription {$regL} ({$pct($reg)}), mais un taux d'activation {$actL} : seuls {$pct($act)} des inscrits effectuent un premier paiement. Le problème ne se situe donc pas à l'inscription mais au moment du premier paiement. La priorité est d'accompagner l'activation — rappel ciblé des inscrits inactifs et appui au guichet de l'établissement. Le potentiel immédiat est de ".number_format($target, 0, ',', ' ').' inscrits à convertir'.($pp ? ", soit environ {$rev($revenue)} de revenus annuels." : '.'),
+                'registrationRate' => $reg, 'activationRate' => $act,
+                'registrationLabel' => $regL, 'activationLabel' => $actL,
+                'bottleneck' => 'activation', 'tone' => 'Frein : activation', 'color' => '#B45F04', 'bg' => '#FEF3E2',
+                'targetParents' => $target, 'annualRevenue' => $revenue, 'lever' => 'Programmer une relance des inscrits inactifs',
+            ];
         }
 
-        return "L'adoption est de {$r} %, avec un entonnoir sain (inscription ".number_format($reg, 0, ',', ' ').' %, activation '.number_format($act, 0, ',', ' ')." %). L'école est bien engagée ; l'enjeu est d'élargir la base de parents connus et de fidéliser les payeurs.";
+        // Entonnoir sain : le levier n'est plus la conversion mais le volume.
+        $revenue = $pp ? $nonAdopters * $subAmount : 0;
+
+        return [
+            'headline' => 'Entonnoir sain — enjeu de volume',
+            'text' => "L'entonnoir est sain : inscription {$regL} ({$pct($reg)}) et activation {$actL} ({$pct($act)}). L'école convertit bien à chaque étape ; l'enjeu n'est plus la conversion mais le volume. La priorité est d'élargir la base de parents connus (import des nouvelles classes, mise à jour des numéros) et de fidéliser les payeurs. Potentiel restant : ".number_format($nonAdopters, 0, ',', ' ').' parents'.($pp ? ", soit environ {$rev($revenue)} de revenus annuels." : '.'),
+            'registrationRate' => $reg, 'activationRate' => $act,
+            'registrationLabel' => $regL, 'activationLabel' => $actL,
+            'bottleneck' => 'healthy', 'tone' => 'Entonnoir sain', 'color' => '#0F7A44', 'bg' => '#E9F8EF',
+            'targetParents' => $nonAdopters, 'annualRevenue' => $revenue, 'lever' => 'Élargir la base et fidéliser les payeurs',
+        ];
+    }
+
+    private function rateLabel(float $rate): string
+    {
+        return match (true) {
+            $rate >= 75 => 'excellent',
+            $rate >= 55 => 'bon',
+            $rate >= 35 => 'moyen',
+            default => 'faible',
+        };
     }
 
     /** @return array{labels: list<string>, rate: list<float>, events: list<array{index:int, label:string}>} */

@@ -51,6 +51,7 @@ new class extends Component
     $sc = $p['school'];
     $k = $p['kpis'];
     $h = $p['health'];
+    $dg = $p['diagnostic'];
     $fr = fn ($n) => number_format((float) $n, 0, ',', ' ');
     $money = fn ($n) => $n >= 1_000_000 ? number_format($n / 1_000_000, 1, ',', ' ').' M F' : $fr($n).' F';
     $monogram = \Illuminate\Support\Str::of($sc['name'])->explode(' ')->filter()->map(fn ($w) => mb_substr($w, 0, 1))->take(2)->implode('');
@@ -175,8 +176,65 @@ new class extends Component
                         </div>
                     </div>
                 </div>
-                <div class="flex flex-[1_1_100%] items-center border-t border-ink-150 bg-ink-50 p-6 lg:flex-[1_1_300px] lg:border-l lg:border-t-0">
-                    <p class="text-[13.5px] leading-relaxed text-ink-700"><span class="font-semibold text-ink-900">Analyse.</span> {{ $p['summary'] }}</p>
+                <div class="flex flex-[1_1_100%] items-center border-t border-ink-150 bg-ink-50 p-6 lg:flex-[1_1_260px] lg:border-l lg:border-t-0">
+                    <p class="text-[13.5px] leading-relaxed text-ink-700"><span class="font-semibold text-ink-900">En bref.</span> {{ $dg['headline'] }}. {{ $k['potential'] > 0 ? 'Potentiel restant ≈ '.$money($k['potential']).'.' : '' }}</p>
+                </div>
+            </div>
+        </div>
+
+        {{-- Diagnostic d'adoption --}}
+        @php $dgTarget = $dg['targetParents']; @endphp
+        <div>
+            <div class="mb-3 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-500">Diagnostic d'adoption</div>
+            <div class="overflow-hidden rounded-[18px] border bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)]" style="border-color: {{ $dg['color'] }}30">
+                <div class="flex items-center gap-2.5 border-b px-6 py-3.5" style="background: {{ $dg['bg'] }}; border-color: {{ $dg['color'] }}20">
+                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" style="color: {{ $dg['color'] }}"><path d="M10 2.5a5.5 5.5 0 00-3 10.1V15h6v-2.4a5.5 5.5 0 00-3-10.1z" stroke="currentColor" stroke-width="1.5"/><path d="M8 17h4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    <span class="text-[14px] font-bold" style="color: {{ $dg['color'] }}">{{ $dg['headline'] }}</span>
+                    <span class="ml-auto rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide" style="background: white; color: {{ $dg['color'] }}">{{ $dg['tone'] }}</span>
+                </div>
+                <div class="grid grid-cols-1 gap-6 p-6 lg:grid-cols-[1.6fr_1fr]">
+                    <div>
+                        {{-- Les deux taux clés de l'entonnoir --}}
+                        <div class="mb-4 grid grid-cols-2 gap-3">
+                            @foreach ([['Taux d\'inscription', $dg['registrationRate'], $dg['registrationLabel'], 'des parents connus créent un compte'], ['Taux d\'activation', $dg['activationRate'], $dg['activationLabel'], 'des inscrits effectuent un paiement']] as [$lbl, $val, $qual, $desc])
+                                @php $qc = $val >= 55 ? '#0F7A44' : ($val >= 35 ? '#B45F04' : '#B91C1C'); @endphp
+                                <div class="rounded-xl border border-ink-150 p-3.5">
+                                    <div class="flex items-baseline justify-between">
+                                        <span class="text-[12px] font-semibold text-ink-700">{{ $lbl }}</span>
+                                        <span class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase" style="color: {{ $qc }}; background: {{ $qc }}14">{{ $qual }}</span>
+                                    </div>
+                                    <div class="mt-1.5 text-[24px] font-extrabold tracking-tight" style="color: {{ $qc }}">{{ number_format($val, 0, ',', ' ') }} %</div>
+                                    <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-ink-100">
+                                        <div class="h-full rounded-full" style="width: {{ min(100, $val) }}%; background: {{ $qc }}"></div>
+                                    </div>
+                                    <div class="mt-1.5 text-[11px] text-ink-500">{{ $desc }}</div>
+                                </div>
+                            @endforeach
+                        </div>
+                        <p class="text-[13.5px] leading-relaxed text-ink-700">{{ $dg['text'] }}</p>
+                    </div>
+
+                    {{-- Gain atteignable + levier --}}
+                    <div class="flex flex-col justify-between gap-4 rounded-2xl p-5" style="background: {{ $dg['bg'] }}">
+                        <div>
+                            <div class="text-[11px] font-bold uppercase tracking-wide" style="color: {{ $dg['color'] }}">Gain atteignable</div>
+                            <div class="mt-2 text-[32px] font-extrabold leading-none text-ink-900">{{ $fr($dgTarget) }}</div>
+                            <div class="text-[12.5px] text-ink-600">{{ $dg['bottleneck'] === 'activation' ? 'inscrits à convertir' : 'parents à gagner' }}</div>
+                            @if ($dg['annualRevenue'] > 0)
+                                <div class="mt-3 border-t pt-3" style="border-color: {{ $dg['color'] }}20">
+                                    <div class="text-[22px] font-bold" style="color: {{ $dg['color'] }}">≈ {{ $money($dg['annualRevenue']) }}</div>
+                                    <div class="text-[12px] text-ink-600">de revenus annuels estimés</div>
+                                </div>
+                            @endif
+                        </div>
+                        <div>
+                            <div class="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-500">Levier prioritaire</div>
+                            <div class="flex items-start gap-2 rounded-xl bg-white/70 px-3 py-2.5">
+                                <svg width="15" height="15" viewBox="0 0 20 20" fill="none" class="mt-0.5 flex-shrink-0" style="color: {{ $dg['color'] }}"><path d="M4 10.5l3.5 3.5L16 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                <span class="text-[13px] font-semibold text-ink-900">{{ $dg['lever'] }}</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
