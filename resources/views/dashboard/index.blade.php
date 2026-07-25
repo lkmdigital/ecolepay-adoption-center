@@ -1,5 +1,6 @@
 <?php
 
+use App\Domains\Dashboard\Actions\ComputeDashboardCharts;
 use App\Domains\Dashboard\Actions\ComputeDashboardKpis;
 use App\Domains\Dashboard\Data\DashboardKpis;
 use Livewire\Attributes\Computed;
@@ -11,6 +12,12 @@ new class extends Component
     public function kpis(): DashboardKpis
     {
         return app(ComputeDashboardKpis::class)();
+    }
+
+    #[Computed]
+    public function charts(): array
+    {
+        return app(ComputeDashboardCharts::class)();
     }
 };
 
@@ -125,5 +132,77 @@ new class extends Component
                 </div>
             </div>
         </div>
+
+        {{-- Tendances --}}
+        <div class="mt-8 mb-4 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-600">Tendances</div>
+        <div class="rounded-[14px] border border-ink-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+            <div class="mb-1 text-[15px] font-semibold text-ink-900">Adoption & volume de paiements</div>
+            <div class="mb-4 text-[12px] text-ink-500">Nouveaux adoptants (1<sup>er</sup> paiement) et volume payé via l'app, par mois</div>
+            <div wire:ignore>
+                <div id="eac-trend-chart" class="h-[300px] w-full"></div>
+            </div>
+        </div>
+
+        {{-- Écoles --}}
+        <div class="mt-8 mb-4 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-600">Écoles</div>
+        <div class="overflow-hidden rounded-[14px] border border-ink-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+            <div class="border-b border-ink-150 px-6 py-4 text-[15px] font-semibold text-ink-900">Top écoles par adoptants</div>
+            <table class="w-full border-collapse">
+                <thead>
+                    <tr class="bg-ink-50">
+                        <th class="px-6 py-3 text-left text-[11.5px] font-bold uppercase tracking-wider text-ink-500">École</th>
+                        <th class="px-6 py-3 text-right text-[11.5px] font-bold uppercase tracking-wider text-ink-500">Adoptants</th>
+                        <th class="px-6 py-3 text-right text-[11.5px] font-bold uppercase tracking-wider text-ink-500">Connus</th>
+                        <th class="px-6 py-3 text-right text-[11.5px] font-bold uppercase tracking-wider text-ink-500">Taux</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach ($this->charts['topSchools'] as $school)
+                        @php
+                            $rate = $school['rate'];
+                            [$badgeBg, $badgeFg] = $rate >= 50 ? ['var(--color-success-soft)', '#0F7A44']
+                                : ($rate >= 25 ? ['var(--color-warning-soft)', '#B45F04'] : ['var(--color-danger-soft)', '#B91C1C']);
+                        @endphp
+                        <tr class="border-b border-ink-150 last:border-0 hover:bg-ink-50">
+                            <td class="px-6 py-3.5 text-[13.5px] font-semibold text-ink-900">{{ $school['name'] }}</td>
+                            <td class="px-6 py-3.5 text-right font-mono text-[13.5px] text-ink-900">{{ $fr($school['adopters']) }}</td>
+                            <td class="px-6 py-3.5 text-right font-mono text-[13.5px] text-ink-700">{{ $fr($school['known']) }}</td>
+                            <td class="px-6 py-3.5 text-right">
+                                <span class="inline-block rounded-full px-2.5 py-1 text-[12px] font-semibold" style="background: {{ $badgeBg }}; color: {{ $badgeFg }}">{{ number_format($rate, 1, ',', ' ') }} %</span>
+                            </td>
+                        </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
+
+@script
+<script>
+    (() => {
+        const data = @js($this->charts['trend']);
+        const el = document.getElementById('eac-trend-chart');
+        if (! el || ! window.echarts) return;
+
+        const chart = window.echarts.init(el);
+        chart.setOption({
+            grid: { left: 48, right: 52, top: 40, bottom: 30 },
+            legend: { data: ['Nouveaux adoptants', 'Volume (M F)'], right: 0, top: 0, icon: 'roundRect', textStyle: { fontFamily: 'Inter', fontSize: 12, color: '#3A4150' } },
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+            xAxis: { type: 'category', data: data.labels, axisLine: { lineStyle: { color: '#E7E9ED' } }, axisLabel: { color: '#B7BCC5', fontFamily: 'Inter', fontSize: 11 }, axisTick: { show: false } },
+            yAxis: [
+                { type: 'value', splitLine: { lineStyle: { color: '#F0F1F3' } }, axisLabel: { color: '#B7BCC5', fontFamily: 'Inter', fontSize: 11 } },
+                { type: 'value', splitLine: { show: false }, axisLabel: { color: '#B7BCC5', fontFamily: 'Inter', fontSize: 11, formatter: '{value} M' } },
+            ],
+            series: [
+                { name: 'Nouveaux adoptants', type: 'bar', data: data.adopters, itemStyle: { color: '#189B57', borderRadius: [4, 4, 0, 0] }, barMaxWidth: 26 },
+                { name: 'Volume (M F)', type: 'line', yAxisIndex: 1, data: data.volume, smooth: true, symbol: 'circle', symbolSize: 6, lineStyle: { color: '#2554C7', width: 2.5 }, itemStyle: { color: '#2554C7' } },
+            ],
+        });
+
+        const resize = () => chart.resize();
+        window.addEventListener('resize', resize);
+    })();
+</script>
+@endscript
