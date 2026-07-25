@@ -32,8 +32,8 @@ new class extends Component
 
     public ?int $selectedId = null;
 
-    /** Colonnes optionnelles visibles (nom / adoption / statut / actions sont toujours affichées). */
-    public array $cols = ['code', 'students', 'known', 'inscrits', 'actifs', 'revenue', 'potential', 'lastActivity'];
+    /** Colonnes optionnelles visibles (nom / adoption / santé / actions sont toujours affichées). */
+    public array $cols = ['code', 'students', 'known', 'inscrits', 'actifs', 'revenue', 'potential', 'lastActivity', 'badge'];
 
     #[Computed]
     public function portfolio(): array
@@ -176,9 +176,9 @@ new class extends Component
 
         return response()->streamDownload(function () use ($rows) {
             $out = fopen('php://output', 'w');
-            fputcsv($out, ['École', 'Code', 'Élèves', 'Parents', 'Inscrits', 'Actifs', 'Adoption %', 'CA', 'Potentiel']);
+            fputcsv($out, ['École', 'Code', 'Élèves', 'Parents', 'Inscrits', 'Actifs', 'Adoption %', 'Score santé', 'CA', 'Potentiel']);
             foreach ($rows as $s) {
-                fputcsv($out, [$s['name'], $s['code'], $s['students'], $s['known'], $s['inscrits'], $s['actifs'], $s['rate'], $s['revenue'], $s['potential']]);
+                fputcsv($out, [$s['name'], $s['code'], $s['students'], $s['known'], $s['inscrits'], $s['actifs'], $s['rate'], $s['healthScore'], $s['revenue'], $s['potential']]);
             }
             fclose($out);
         }, 'ecoles-'.now()->format('Y-m-d').'.csv');
@@ -216,8 +216,8 @@ new class extends Component
         return '<svg width="'.$w.'" height="'.$h.'" viewBox="0 0 '.$w.' '.$h.'" fill="none" class="overflow-visible"><polygon points="0,'.$h.' '.$line.' '.$w.','.$h.'" fill="'.$color.'" opacity="0.09"/><polyline points="'.$line.'" fill="none" stroke="'.$color.'" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     };
 
-    $colLabels = ['code' => 'Code', 'students' => 'Élèves', 'known' => 'Parents', 'inscrits' => 'Inscrits', 'actifs' => 'Actifs', 'revenue' => 'CA', 'potential' => 'Potentiel', 'lastActivity' => 'Dernière activité'];
-    $numericSorts = ['rate' => 'Adoption', 'known' => 'Parents', 'revenue' => 'Revenus', 'recent' => 'Progression', 'potential' => 'Potentiel'];
+    $colLabels = ['code' => 'Code', 'students' => 'Élèves', 'known' => 'Parents', 'inscrits' => 'Inscrits', 'actifs' => 'Actifs', 'revenue' => 'CA', 'potential' => 'Potentiel', 'lastActivity' => 'Dernière activité', 'badge' => 'Statut'];
+    $numericSorts = ['healthScore' => 'Score de santé', 'rate' => 'Adoption', 'known' => 'Parents', 'revenue' => 'Revenus', 'recent' => 'Progression', 'potential' => 'Potentiel'];
     $adoptionLevels = ['' => 'Toutes', 'critique' => 'Critique (< 20 %)', 'faible' => 'Faible (20–40 %)', 'moyen' => 'Moyen (40–70 %)', 'excellent' => 'Excellent (> 70 %)'];
     $modelLevels = ['' => 'Tous modèles', 'parent_paid' => 'Abonnement parent', 'bundled' => 'Abonnement inclus'];
     $sum = $this->portfolio['summary'];
@@ -370,10 +370,11 @@ new class extends Component
                             @if (in_array('inscrits', $cols))<th class="px-3 py-3 text-right">Inscrits</th>@endif
                             @if (in_array('actifs', $cols))<th class="px-3 py-3 text-right">Actifs</th>@endif
                             <th class="cursor-pointer px-3 py-3 text-right hover:text-ink-800" wire:click="sortByCol('rate')">Adoption @if($sort==='rate')<span class="text-brand-600">{{ $dir==='desc'?'↓':'↑' }}</span>@endif</th>
+                            <th class="cursor-pointer px-3 py-3 text-center hover:text-ink-800" wire:click="sortByCol('healthScore')">Santé @if($sort==='healthScore')<span class="text-brand-600">{{ $dir==='desc'?'↓':'↑' }}</span>@endif</th>
                             @if (in_array('revenue', $cols))<th class="cursor-pointer px-3 py-3 text-right hover:text-ink-800" wire:click="sortByCol('revenue')">CA @if($sort==='revenue')<span class="text-brand-600">{{ $dir==='desc'?'↓':'↑' }}</span>@endif</th>@endif
                             @if (in_array('potential', $cols))<th class="cursor-pointer px-3 py-3 text-right hover:text-ink-800" wire:click="sortByCol('potential')">Potentiel @if($sort==='potential')<span class="text-brand-600">{{ $dir==='desc'?'↓':'↑' }}</span>@endif</th>@endif
                             @if (in_array('lastActivity', $cols))<th class="px-3 py-3 text-left">Activité</th>@endif
-                            <th class="px-3 py-3 text-left">Statut</th>
+                            @if (in_array('badge', $cols))<th class="px-3 py-3 text-left">Statut</th>@endif
                             <th class="px-4 py-3"></th>
                         </tr>
                     </thead>
@@ -392,10 +393,17 @@ new class extends Component
                                 @if (in_array('inscrits', $cols))<td class="px-3 py-3 text-right font-mono text-[13px] text-ink-700">{{ $fr($s['inscrits']) }}</td>@endif
                                 @if (in_array('actifs', $cols))<td class="px-3 py-3 text-right font-mono text-[13px] font-semibold text-ink-900">{{ $fr($s['actifs']) }}</td>@endif
                                 <td class="px-3 py-3 text-right"><span class="font-mono text-[13px] font-bold" style="color: {{ $s['badge']['color'] }}">{{ number_format($s['rate'], 1, ',', ' ') }} %</span></td>
+                                <td class="px-3 py-3">
+                                    <div class="flex items-center justify-center gap-1.5">
+                                        <span class="h-2 w-2 flex-shrink-0 rounded-full" style="background: {{ $s['health']['dot'] }}"></span>
+                                        <span class="font-mono text-[13px] font-bold" style="color: {{ $s['health']['color'] }}">{{ $s['health']['score'] }}</span>
+                                        <span class="font-mono text-[10.5px] text-ink-400">/100</span>
+                                    </div>
+                                </td>
                                 @if (in_array('revenue', $cols))<td class="px-3 py-3 text-right font-mono text-[12.5px] text-ink-700">{{ $s['revenue'] > 0 ? $money($s['revenue']) : '—' }}</td>@endif
                                 @if (in_array('potential', $cols))<td class="px-3 py-3 text-right font-mono text-[12.5px] text-ink-700">{{ $s['potential'] > 0 ? $money($s['potential']) : '—' }}</td>@endif
                                 @if (in_array('lastActivity', $cols))<td class="px-3 py-3 text-[12px] text-ink-500">{{ $ago($s['lastActivity']) }}</td>@endif
-                                <td class="px-3 py-3"><span class="inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-semibold" style="background: {{ $s['badge']['bg'] }}; color: {{ $s['badge']['color'] }}">{{ $s['badge']['label'] }}</span></td>
+                                @if (in_array('badge', $cols))<td class="px-3 py-3"><span class="inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-semibold" style="background: {{ $s['badge']['bg'] }}; color: {{ $s['badge']['color'] }}">{{ $s['badge']['label'] }}</span></td>@endif
                                 <td class="px-4 py-3 text-right" wire:click.stop>
                                     <flux:dropdown>
                                         <button class="flex h-7 w-7 items-center justify-center rounded-md text-ink-500 hover:bg-ink-100 hover:text-ink-800">
@@ -441,7 +449,12 @@ new class extends Component
                                 <div class="text-[11.5px] text-ink-500">parents actifs</div>
                             </div>
                         </div>
-                        <div class="mt-4 flex items-center justify-between border-t border-ink-150 pt-3">
+                        <div class="mt-4 flex items-center gap-2 rounded-xl px-3 py-2" style="background: {{ $s['health']['bg'] }}">
+                            <span class="h-2 w-2 rounded-full" style="background: {{ $s['health']['dot'] }}"></span>
+                            <span class="text-[12px] font-semibold" style="color: {{ $s['health']['color'] }}">Score de santé</span>
+                            <span class="ml-auto font-mono text-[15px] font-bold" style="color: {{ $s['health']['color'] }}">{{ $s['health']['score'] }}<span class="text-[10px] text-ink-400">/100</span></span>
+                        </div>
+                        <div class="mt-3 flex items-center justify-between border-t border-ink-150 pt-3">
                             <div class="text-[12px] text-ink-500">Potentiel : <span class="font-semibold text-ink-800">{{ $s['potential'] > 0 ? $money($s['potential']) : '—' }}</span></div>
                             <span class="inline-flex items-center gap-1 text-[12.5px] font-semibold text-brand-600">Voir la fiche
                                 <svg width="13" height="13" viewBox="0 0 20 20" fill="none"><path d="M7 4l6 6-6 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -495,6 +508,36 @@ new class extends Component
                 </div>
 
                 <div class="flex-1 overflow-y-auto px-6 py-5">
+                    {{-- Score de santé --}}
+                    <div class="mb-5 rounded-2xl border p-4" style="border-color: {{ $s['health']['color'] }}20; background: {{ $s['health']['bg'] }}">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <div class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider" style="color: {{ $s['health']['color'] }}">
+                                    <span class="h-2 w-2 rounded-full" style="background: {{ $s['health']['dot'] }}"></span>Score de santé
+                                </div>
+                                <div class="mt-1 text-[13px] text-ink-600">Indicateur composite de priorité</div>
+                            </div>
+                            <div class="text-right">
+                                <span class="text-[34px] font-extrabold leading-none" style="color: {{ $s['health']['color'] }}">{{ $s['health']['score'] }}</span>
+                                <span class="text-[14px] font-bold text-ink-400">/100</span>
+                            </div>
+                        </div>
+                        <div class="mt-4 flex flex-col gap-2">
+                            @foreach ($s['health']['breakdown'] as $c)
+                                <div class="flex items-center gap-2.5 {{ $c['available'] ? '' : 'opacity-50' }}">
+                                    <div class="w-32 flex-shrink-0 text-[12px] font-medium text-ink-700">
+                                        {{ $c['label'] }}
+                                        <span class="text-[10px] text-ink-400">{{ $c['available'] ? $c['weight'].' %' : 'à venir' }}</span>
+                                    </div>
+                                    <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-white/70">
+                                        <div class="h-full rounded-full" style="width: {{ $c['available'] ? $c['score'] : 0 }}%; background: {{ $s['health']['color'] }}"></div>
+                                    </div>
+                                    <div class="w-8 flex-shrink-0 text-right font-mono text-[11.5px] font-semibold text-ink-700">{{ $c['available'] ? $c['score'] : '—' }}</div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+
                     <div class="mb-1 text-[11px] font-bold uppercase tracking-wider text-ink-500">Informations générales</div>
                     <div class="mb-5 grid grid-cols-2 gap-y-2 text-[13px]">
                         <div class="text-ink-500">Ville · Région</div><div class="text-right font-medium text-ink-800">— <span class="text-[10.5px] text-ink-400">(à venir)</span></div>
