@@ -133,6 +133,36 @@ new class extends Component
             </div>
         </div>
 
+        {{-- Situation actuelle --}}
+        <div class="mt-6 flex flex-wrap items-center gap-x-9 gap-y-5 overflow-hidden rounded-2xl px-8 py-7 text-white"
+             style="background: linear-gradient(135deg, #173C82 0%, #2554C7 60%, #3E6FE0 100%)">
+            <div class="flex min-w-[200px] flex-[1_1_240px] items-center gap-2.5">
+                <div class="flex h-[38px] w-[38px] flex-shrink-0 items-center justify-center rounded-[10px]" style="background: rgba(255,255,255,0.15)">
+                    <svg width="19" height="19" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="#fff" stroke-width="1.5"/><circle cx="10" cy="10" r="2.6" fill="#fff"/></svg>
+                </div>
+                <div>
+                    <div class="text-[11px] font-bold uppercase tracking-[0.07em]" style="color: rgba(255,255,255,0.65)">Situation actuelle</div>
+                    <div class="mt-0.5 text-[15px] font-bold">Où en sommes-nous aujourd'hui ?</div>
+                </div>
+            </div>
+            <div class="flex flex-[2_1_460px] flex-wrap gap-9">
+                <div>
+                    <div class="text-[32px] font-extrabold tracking-tight">{{ number_format($k->adoptionRate(), 1, ',', ' ') }} %</div>
+                    <div class="mt-0.5 text-[12.5px]" style="color: rgba(255,255,255,0.7)">Adoption globale (1<sup>er</sup> paiement)</div>
+                </div>
+                <div class="w-px self-stretch" style="background: rgba(255,255,255,0.2)"></div>
+                <div>
+                    <div class="text-[32px] font-extrabold tracking-tight">{{ $fr($k->nonAdopters()) }}</div>
+                    <div class="mt-0.5 text-[12.5px]" style="color: rgba(255,255,255,0.7)">Parents à convertir · ≈ {{ $money($k->potentialRevenue) }} d'abonnements</div>
+                </div>
+                <div class="w-px self-stretch" style="background: rgba(255,255,255,0.2)"></div>
+                <div>
+                    <div class="text-[32px] font-extrabold tracking-tight">{{ $fr($k->urgentSchools) }}</div>
+                    <div class="mt-0.5 text-[12.5px]" style="color: rgba(255,255,255,0.7)">écoles à intervention prioritaire</div>
+                </div>
+            </div>
+        </div>
+
         {{-- Tendances --}}
         <div class="mt-8 mb-4 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-600">Tendances</div>
         <div class="rounded-[14px] border border-ink-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">

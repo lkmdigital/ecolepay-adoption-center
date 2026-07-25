@@ -43,7 +43,38 @@ final class ComputeDashboardKpis
             perdus: $byStage[AdoptionStageCode::Lost->value] ?? 0,
             revenue: $revenue,
             activeSchools: $activeSchools,
+            potentialRevenue: $this->potentialSubscriptionRevenue(),
+            urgentSchools: $this->urgentSchoolCount(),
         );
+    }
+
+    /**
+     * Revenu d'abonnement non exploité : pour chaque parent connu non adoptant
+     * d'une école où l'abonnement est payé par le parent, le montant qu'il paierait.
+     */
+    private function potentialSubscriptionRevenue(): int
+    {
+        return (int) ParentJourney::query()->production()
+            ->join('dim_schools as s', 's.id', '=', 'fact_parent_journeys.school_id')
+            ->where('fact_parent_journeys.has_ever_paid', false)
+            ->where('s.subscription_model', 'parent_paid')
+            ->sum('s.subscription_amount');
+    }
+
+    /**
+     * Écoles à intervention prioritaire : taux d'adoption < 25 %, avec une base
+     * suffisante pour que le chiffre soit significatif.
+     */
+    private function urgentSchoolCount(): int
+    {
+        return DB::table('fact_parent_journeys')
+            ->where('is_test', false)
+            ->groupBy('school_id')
+            ->selectRaw('school_id')
+            ->havingRaw('COUNT(DISTINCT parent_id) >= 20')
+            ->havingRaw('COUNT(DISTINCT CASE WHEN has_ever_paid = 1 THEN parent_id END) / COUNT(DISTINCT parent_id) < 0.25')
+            ->get()
+            ->count();
     }
 
     /**

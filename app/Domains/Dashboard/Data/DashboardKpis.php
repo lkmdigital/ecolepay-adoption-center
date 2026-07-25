@@ -19,7 +19,17 @@ final readonly class DashboardKpis
         public int $perdus,
         public int $revenue,
         public int $activeSchools,
+        public int $potentialRevenue = 0,
+        public int $urgentSchools = 0,
     ) {}
+
+    /**
+     * Parents connus qui n'ont pas encore adopté : la cible de conversion.
+     */
+    public function nonAdopters(): int
+    {
+        return max($this->connus - $this->adoptants, 0);
+    }
 
     public function adoptionRate(): float
     {
