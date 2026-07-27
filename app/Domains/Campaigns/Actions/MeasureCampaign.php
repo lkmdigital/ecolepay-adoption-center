@@ -20,6 +20,15 @@ final class MeasureCampaign
     {
         $d = $campaign->campaign_date ? Carbon::parse($campaign->campaign_date)->startOfDay() : Carbon::parse($campaign->created_at)->startOfDay();
         $end = $d->copy()->addDays($campaign->attribution_window_days);
+
+        return $campaign->channel->isContactBased()
+            ? $this->measureContacts($campaign, $d, $end)
+            : $this->measureSchool($campaign, $d, $end);
+    }
+
+    /** Mesure par rapprochement individuel des contacts importés (canaux à liste). */
+    private function measureContacts(Campaign $campaign, Carbon $d, Carbon $end): array
+    {
         $schoolId = $campaign->school_id;
 
         $contacts = (int) DB::table('fact_campaign_contacts')->where('campaign_id', $campaign->id)->where('is_valid', true)->count();
@@ -79,6 +88,7 @@ final class MeasureCampaign
         $conversion = $contacts > 0 ? round($newPayments / $contacts * 100, 1) : 0.0;
 
         return [
+            'mode' => 'contacts',
             'contacts' => $contacts,
             'matched' => $matched,
             'newAccounts' => $newAccounts,
@@ -96,6 +106,109 @@ final class MeasureCampaign
             ],
             'evolution' => $this->evolution($campaign->id, $d, $schoolId),
         ];
+    }
+
+    /**
+     * Mesure au niveau de l'école : pour les opérations sans liste de contacts
+     * (diffusion, terrain), on mesure l'évolution de l'école dans la fenêtre.
+     */
+    private function measureSchool(Campaign $campaign, Carbon $d, Carbon $end): array
+    {
+        $schoolId = $campaign->school_id;
+        $window = [$d->toDateString(), $end->toDateString()];
+
+        // Sans école ciblée, une opération de diffusion n'est pas rattachable à une base mesurable.
+        if (! $schoolId) {
+            return [
+                'mode' => 'none', 'contacts' => 0, 'matched' => 0, 'newAccounts' => 0, 'newPayments' => 0,
+                'active' => 0, 'revenue' => 0, 'conversion' => 0.0, 'window' => $window,
+                'funnel' => [], 'repartition' => [], 'evolution' => ['labels' => [], 'accounts' => [], 'payments' => []],
+            ];
+        }
+
+        $newAccounts = (int) DB::table('dim_parents as p')->join('fact_parent_journeys as j', 'j.parent_id', '=', 'p.id')
+            ->where('j.is_test', false)->where('j.school_id', $schoolId)
+            ->whereBetween('p.account_created_at', [$d, $end])->distinct()->count('p.id');
+        $newPayments = (int) DB::table('fact_parent_journeys')->where('is_test', false)->where('school_id', $schoolId)
+            ->whereBetween('first_payment_at', [$d, $end])->distinct()->count('parent_id');
+        $revenue = (int) DB::table('fact_payments')->where('is_test', false)->where('is_manual', false)->where('status', 'success')
+            ->where('school_id', $schoolId)->whereBetween('paid_at', [$d, $end])->sum('amount');
+
+        // État actuel de l'école (contexte de l'entonnoir et de la répartition).
+        $f = DB::table('fact_parent_journeys as j')->leftJoin('dim_parents as p', 'p.id', '=', 'j.parent_id')
+            ->where('j.is_test', false)->where('j.school_id', $schoolId)
+            ->selectRaw('COUNT(DISTINCT j.parent_id) as known')
+            ->selectRaw('COUNT(DISTINCT CASE WHEN p.account_created_at IS NOT NULL THEN j.parent_id END) as inscrits')
+            ->selectRaw('COUNT(DISTINCT CASE WHEN j.has_ever_paid = 1 THEN j.parent_id END) as actifs')
+            ->selectRaw('COUNT(DISTINCT CASE WHEN j.current_stage_id IN (5,6) THEN j.parent_id END) as inactifs')
+            ->first();
+        $known = (int) $f->known;
+        $inscrits = (int) $f->inscrits;
+        $actifs = (int) $f->actifs;
+        $inactifs = (int) $f->inactifs;
+
+        return [
+            'mode' => 'school',
+            'contacts' => 0,
+            'matched' => 0,
+            'newAccounts' => $newAccounts,
+            'newPayments' => $newPayments,
+            'active' => $actifs,
+            'revenue' => $revenue,
+            'conversion' => $newAccounts > 0 ? round($newPayments / $newAccounts * 100, 1) : 0.0,
+            'window' => $window,
+            'funnel' => $this->buildFunnel([['Parents connus', $known], ['Comptes créés', $inscrits], ['Ont payé', $actifs]]),
+            'repartition' => [
+                ['label' => 'Non inscrits', 'value' => max($known - $inscrits, 0), 'color' => '#94A3B8'],
+                ['label' => 'Inscrits sans paiement', 'value' => max($inscrits - $actifs, 0), 'color' => '#38BDF8'],
+                ['label' => 'Actifs', 'value' => max($actifs - $inactifs, 0), 'color' => '#22C55E'],
+                ['label' => 'Inactifs (à risque · perdus)', 'value' => $inactifs, 'color' => '#F59E0B'],
+            ],
+            'evolution' => $this->schoolEvolution($schoolId, $d),
+        ];
+    }
+
+    /**
+     * @param  list<array{0:string,1:int}>  $stages
+     * @return list<array{label:string, value:int, conv:?float}>
+     */
+    private function buildFunnel(array $stages): array
+    {
+        $out = [];
+        $prev = null;
+        foreach ($stages as [$label, $value]) {
+            $out[] = ['label' => $label, 'value' => $value, 'conv' => $prev !== null && $prev > 0 ? round($value / $prev * 100, 1) : null];
+            $prev = $value;
+        }
+
+        return $out;
+    }
+
+    private function schoolEvolution(int $schoolId, Carbon $d): array
+    {
+        $end = $d->copy()->addDays(90);
+        $accounts = DB::table('dim_parents as p')->join('fact_parent_journeys as j', 'j.parent_id', '=', 'p.id')
+            ->where('j.is_test', false)->where('j.school_id', $schoolId)
+            ->whereBetween('p.account_created_at', [$d, $end])
+            ->selectRaw('DATEDIFF(p.account_created_at, ?) as day, COUNT(DISTINCT p.id) as n', [$d])->groupBy('day')->pluck('n', 'day');
+        $payments = DB::table('fact_parent_journeys')->where('is_test', false)->where('school_id', $schoolId)
+            ->whereBetween('first_payment_at', [$d, $end])
+            ->selectRaw('DATEDIFF(first_payment_at, ?) as day, COUNT(DISTINCT parent_id) as n', [$d])->groupBy('day')->pluck('n', 'day');
+
+        $labels = [];
+        $accSeries = [];
+        $paySeries = [];
+        $accCum = 0;
+        $payCum = 0;
+        for ($day = 0; $day <= 90; $day++) {
+            $accCum += (int) ($accounts[$day] ?? 0);
+            $payCum += (int) ($payments[$day] ?? 0);
+            $labels[] = $day;
+            $accSeries[] = $accCum;
+            $paySeries[] = $payCum;
+        }
+
+        return ['labels' => $labels, 'accounts' => $accSeries, 'payments' => $paySeries];
     }
 
     /** @return list<array{label:string, value:int, conv:?float}> */

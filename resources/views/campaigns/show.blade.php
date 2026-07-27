@@ -71,6 +71,22 @@ new class extends Component
     public function analysis(): array
     {
         $m = $this->measure;
+
+        // Opération sans liste de contacts : mesure au niveau de l'école.
+        if ($m['mode'] !== 'contacts') {
+            $text = "Opération sans liste de contacts individuels, mesurée au niveau de l'école. Depuis l'opération, {$this->fr($m['newAccounts'])} nouveaux comptes ont été créés et {$this->fr($m['newPayments'])} parents ont effectué un premier paiement dans la fenêtre d'attribution.";
+
+            return [
+                'text' => $text,
+                'actions' => [
+                    'Prolonger l\'action par une relance ciblée des inscrits inactifs.',
+                    'Mesurer sur une fenêtre plus longue si l\'effet est différé.',
+                    'Documenter l\'action pour la comparer aux prochaines opérations.',
+                ],
+                'delta' => null,
+            ];
+        }
+
         $global = app(ListCampaigns::class)()['kpis'];
         $avgConv = $global['conversion'];
         $delta = $avgConv > 0 ? round(($m['conversion'] - $avgConv) / $avgConv * 100) : null;
@@ -108,6 +124,10 @@ new class extends Component
     $money = fn ($n) => $n >= 1_000_000 ? number_format($n / 1_000_000, 1, ',', ' ').' M F' : $fr($n).' F';
     $dateFr = fn ($d) => $d ? \Illuminate\Support\Carbon::parse($d)->locale('fr')->isoFormat('D MMM YYYY') : '—';
     [$sfg, $sbg] = $c->status->colors();
+    $isSchool = $m['mode'] !== 'contacts';
+    $summaryCards = $isSchool
+        ? [['Nouveaux comptes', $fr($m['newAccounts'])], ['Nouveaux payeurs', $fr($m['newPayments'])], ['Actifs (école)', $fr($m['active'])], ['Conversion', number_format($m['conversion'], 1, ',', ' ').' %'], ['Revenus', $m['revenue'] > 0 ? $money($m['revenue']) : '—'], ['Type', $c->channel->label()]]
+        : [['Contacts', $fr($m['contacts'])], ['Rapprochés', $fr($m['matched'])], ['Nouveaux comptes', $fr($m['newAccounts'])], ['Nouveaux payeurs', $fr($m['newPayments'])], ['Conversion', number_format($m['conversion'], 1, ',', ' ').' %'], ['Revenus', $m['revenue'] > 0 ? $money($m['revenue']) : '—']];
 @endphp
 
 <div class="mx-auto max-w-[1480px]">
@@ -133,9 +153,16 @@ new class extends Component
         </div>
     </div>
 
+    @if ($isSchool)
+        <div class="mb-4 flex items-start gap-2.5 rounded-xl border border-brand-100 bg-brand-50/60 px-4 py-3">
+            <svg width="17" height="17" viewBox="0 0 20 20" fill="none" class="mt-0.5 flex-shrink-0 text-brand-600"><path d="M10 2l7 4v4c0 4-3 6.5-7 8-4-1.5-7-4-7-8V6z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+            <div class="text-[12.5px] leading-snug text-ink-700"><span class="font-semibold text-ink-900">Mesure au niveau de l'école.</span> Cette opération ({{ $c->channel->label() }}) n'a pas de liste de contacts individuels : son impact est estimé par l'évolution des inscriptions et paiements de l'école dans la fenêtre d'attribution.</div>
+        </div>
+    @endif
+
     {{-- Résumé --}}
     <div class="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        @foreach ([['Contacts', $fr($m['contacts'])], ['Rapprochés', $fr($m['matched'])], ['Nouveaux comptes', $fr($m['newAccounts'])], ['Nouveaux payeurs', $fr($m['newPayments'])], ['Conversion', number_format($m['conversion'], 1, ',', ' ').' %'], ['Revenus', $m['revenue'] > 0 ? $money($m['revenue']) : '—']] as [$l, $v])
+        @foreach ($summaryCards as [$l, $v])
             <div class="rounded-[13px] border border-ink-200 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
                 <div class="text-[21px] font-bold tracking-tight text-ink-900">{{ $v }}</div>
                 <div class="text-[11.5px] text-ink-500">{{ $l }}</div>
@@ -147,7 +174,7 @@ new class extends Component
     {{-- Funnel + Répartition --}}
     <div class="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div class="rounded-[16px] border border-ink-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-            <div class="mb-4 text-[15px] font-semibold text-ink-900">Entonnoir de conversion</div>
+            <div class="mb-4 text-[15px] font-semibold text-ink-900">{{ $isSchool ? "Entonnoir de l'école" : 'Entonnoir de conversion' }}</div>
             @php $fmax = max(1, $m['funnel'][0]['value']); @endphp
             <div class="flex flex-col gap-2.5">
                 @foreach ($m['funnel'] as $i => $stage)
@@ -165,8 +192,8 @@ new class extends Component
         </div>
 
         <div class="rounded-[16px] border border-ink-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-            <div class="mb-1 text-[15px] font-semibold text-ink-900">Répartition des contacts</div>
-            <div class="mb-3 text-[12px] text-ink-500">Situation des contacts face à EcolePay</div>
+            <div class="mb-1 text-[15px] font-semibold text-ink-900">{{ $isSchool ? "Répartition de l'école" : 'Répartition des contacts' }}</div>
+            <div class="mb-3 text-[12px] text-ink-500">{{ $isSchool ? 'Situation actuelle de la base' : 'Situation des contacts face à EcolePay' }}</div>
             <div class="flex flex-col items-center gap-4 sm:flex-row">
                 <div class="w-full max-w-[190px] flex-shrink-0" wire:ignore><div id="camp-donut" class="h-[180px] w-full"></div></div>
                 @php $rt = max(1, collect($m['repartition'])->sum('value')); @endphp
@@ -225,7 +252,8 @@ new class extends Component
         </div>
     </div>
 
-    {{-- Contacts --}}
+    {{-- Contacts (uniquement pour les opérations à liste) --}}
+    @unless ($isSchool)
     <div class="mb-6 overflow-hidden rounded-[16px] border border-ink-200 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
         <div class="flex items-center justify-between border-b border-ink-150 px-6 py-4">
             <span class="text-[15px] font-semibold text-ink-900">Contacts de la campagne</span>
@@ -263,6 +291,7 @@ new class extends Component
             </table>
         </div>
     </div>
+    @endunless
 
     {{-- Historique --}}
     <div class="rounded-[16px] border border-ink-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">

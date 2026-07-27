@@ -87,10 +87,24 @@ new class extends Component
         $this->wizardOpen = false;
     }
 
-    public function toStep2(): void
+    public function contactBased(): bool
+    {
+        return CampaignChannel::from($this->wChannel)->isContactBased();
+    }
+
+    public function proceedFromInfo(): void
     {
         $this->validate(['name' => 'required|min:3', 'owner' => 'required', 'date' => 'required|date']);
-        $this->step = 2;
+
+        // Les actions terrain / de diffusion se mesurent au niveau de l'école : une école est requise.
+        if (! $this->contactBased() && ! $this->school_id) {
+            $this->addError('school_id', 'Une école est requise pour mesurer l\'impact d\'une action sans liste de contacts.');
+
+            return;
+        }
+
+        // Les canaux à liste passent par l'import ; les autres vont droit à la validation.
+        $this->step = $this->contactBased() ? 2 : 3;
     }
 
     public function updatedFile(): void
@@ -109,10 +123,14 @@ new class extends Component
         $this->step = 3;
     }
 
+    public function backFromValidation(): void
+    {
+        $this->step = $this->contactBased() ? 2 : 1;
+    }
+
     public function launchImport(): void
     {
         $this->step = 4;
-        $parsed = app(ContactFileParser::class)->parse($this->file->getRealPath());
 
         $campaign = Campaign::create([
             'name' => $this->name,
@@ -126,7 +144,12 @@ new class extends Component
             'attribution_window_days' => 30,
         ]);
 
-        app(ImportCampaignContacts::class)->handle($campaign, $parsed['contacts'], $parsed);
+        // Import des contacts seulement pour les canaux à liste.
+        if ($this->contactBased() && $this->file) {
+            $parsed = app(ContactFileParser::class)->parse($this->file->getRealPath());
+            app(ImportCampaignContacts::class)->handle($campaign, $parsed['contacts'], $parsed);
+        }
+
         $this->createdId = $campaign->id;
         unset($this->data, $this->rows);
     }
@@ -159,7 +182,7 @@ new class extends Component
     <div class="mb-5 flex flex-wrap items-center justify-end gap-2">
         <button wire:click="openWizard" class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3.5 py-2 text-[12.5px] font-semibold text-white hover:bg-brand-700">
             <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-            Nouvelle campagne
+            Nouvelle opération marketing
         </button>
         <button wire:click="refreshData" class="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3 py-2 text-[12.5px] font-semibold text-ink-800 hover:bg-ink-50">
             <svg width="15" height="15" viewBox="0 0 20 20" fill="none" wire:loading.class="animate-spin" wire:target="refreshData"><path d="M16 6a7 7 0 10.9 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M16.5 3v3.2h-3.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -201,13 +224,17 @@ new class extends Component
         </flux:dropdown>
         <flux:dropdown>
             <button class="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-[13px] font-semibold text-ink-800 hover:bg-ink-50">
-                {{ $channel ? CampaignChannel::from($channel)->label() : 'Tous canaux' }}
+                {{ $channel ? CampaignChannel::from($channel)->label() : 'Tous types' }}
                 <svg width="12" height="12" viewBox="0 0 20 20" fill="none"><path d="M6 8l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
             <flux:menu>
-                <flux:menu.item wire:click="$set('channel','')" icon="{{ $channel === '' ? 'check' : '' }}">Tous canaux</flux:menu.item>
-                @foreach (CampaignChannel::cases() as $ch)
-                    <flux:menu.item wire:click="$set('channel','{{ $ch->value }}')" icon="{{ $channel === $ch->value ? 'check' : '' }}">{{ $ch->label() }}</flux:menu.item>
+                <flux:menu.item wire:click="$set('channel','')" icon="{{ $channel === '' ? 'check' : '' }}">Tous types</flux:menu.item>
+                @foreach (collect(CampaignChannel::cases())->groupBy(fn ($ch) => $ch->category()) as $cat => $chs)
+                    <flux:menu.separator />
+                    <div class="px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-ink-400">{{ $cat }}</div>
+                    @foreach ($chs as $ch)
+                        <flux:menu.item wire:click="$set('channel','{{ $ch->value }}')" icon="{{ $channel === $ch->value ? 'check' : '' }}">{{ $ch->label() }}</flux:menu.item>
+                    @endforeach
                 @endforeach
             </flux:menu>
         </flux:dropdown>
@@ -217,9 +244,9 @@ new class extends Component
     @if ($this->data['kpis']['campaigns'] === 0)
         <div class="flex flex-col items-center gap-3 rounded-[16px] border border-dashed border-ink-300 bg-white py-16 text-center">
             <svg width="38" height="38" viewBox="0 0 20 20" fill="none" class="text-ink-300"><rect x="2.5" y="4" width="15" height="10" rx="3" stroke="currentColor" stroke-width="1.4"/><polygon points="6,14 6,18 10,14" fill="currentColor"/></svg>
-            <div class="text-[15px] font-semibold text-ink-800">Aucune campagne pour le moment</div>
-            <div class="max-w-md text-[12.5px] text-ink-500">Créez votre première campagne et importez la liste de contacts ciblés (WhatsApp / Perfect CX) pour mesurer son impact réel sur l'adoption.</div>
-            <button wire:click="openWizard" class="mt-1 inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-brand-700">Créer une campagne</button>
+            <div class="text-[15px] font-semibold text-ink-800">Aucune opération pour le moment</div>
+            <div class="max-w-md text-[12.5px] text-ink-500">Enregistrez votre première opération marketing — canal digital (WhatsApp, SMS, Email) avec import de contacts, ou action terrain (portes ouvertes, réunion, formation) — pour en mesurer l'impact sur l'adoption.</div>
+            <button wire:click="openWizard" class="mt-1 inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-brand-700">Créer une opération</button>
         </div>
     @elseif ($this->rows->isEmpty())
         <div class="rounded-[16px] border border-dashed border-ink-300 bg-white py-14 text-center text-[13px] text-ink-500">Aucune campagne ne correspond aux filtres.</div>
@@ -250,7 +277,7 @@ new class extends Component
                             </td>
                             <td class="px-3 py-3 text-[13px] text-ink-700">{{ $r['school'] ?: '—' }}</td>
                             <td class="px-3 py-3 text-[12.5px] text-ink-600">{{ $r['date'] ? \Illuminate\Support\Carbon::parse($r['date'])->locale('fr')->isoFormat('D MMM YYYY') : '—' }}</td>
-                            <td class="px-3 py-3 text-right font-mono text-[13px] text-ink-700">{{ $fr($r['contacts']) }}</td>
+                            <td class="px-3 py-3 text-right font-mono text-[13px] text-ink-700">{{ $r['channel']->isContactBased() ? $fr($r['contacts']) : '—' }}</td>
                             <td class="px-3 py-3 text-right font-mono text-[13px] text-ink-700">{{ $fr($r['newAccounts']) }}</td>
                             <td class="px-3 py-3 text-right font-mono text-[13px] font-semibold text-ink-900">{{ $fr($r['newPayments']) }}</td>
                             <td class="px-3 py-3 text-right font-mono text-[13px] font-bold text-brand-700">{{ number_format($r['conversion'], 1, ',', ' ') }} %</td>
@@ -272,16 +299,17 @@ new class extends Component
         <div class="relative flex max-h-[90vh] w-full max-w-[640px] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
             {{-- Steps header --}}
             <div class="flex items-center justify-between border-b border-ink-150 px-6 py-4">
-                <div class="text-[15px] font-bold text-ink-900">Nouvelle campagne</div>
+                <div class="text-[15px] font-bold text-ink-900">Nouvelle opération marketing</div>
                 <button wire:click="closeWizard" class="flex h-8 w-8 items-center justify-center rounded-lg text-ink-500 hover:bg-ink-100">
                     <svg width="17" height="17" viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
                 </button>
             </div>
+            @php $wizSteps = $this->contactBased() ? [1 => 'Informations', 2 => 'Contacts', 3 => 'Validation', 4 => 'Terminé'] : [1 => 'Informations', 3 => 'Validation', 4 => 'Terminé']; @endphp
             <div class="flex items-center gap-1.5 px-6 pt-4">
-                @foreach (['Informations', 'Contacts', 'Validation', 'Import'] as $i => $label)
+                @foreach ($wizSteps as $num => $label)
                     <div class="flex flex-1 items-center gap-1.5">
-                        <span class="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-bold {{ $step > $i + 1 ? 'bg-success text-white' : ($step === $i + 1 ? 'bg-brand-600 text-white' : 'bg-ink-100 text-ink-500') }}">{{ $step > $i + 1 ? '✓' : $i + 1 }}</span>
-                        <span class="text-[11.5px] font-semibold {{ $step >= $i + 1 ? 'text-ink-800' : 'text-ink-400' }}">{{ $label }}</span>
+                        <span class="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-bold {{ $step > $num ? 'bg-success text-white' : ($step === $num ? 'bg-brand-600 text-white' : 'bg-ink-100 text-ink-500') }}">{{ $step > $num ? '✓' : $loop->iteration }}</span>
+                        <span class="text-[11.5px] font-semibold {{ $step >= $num ? 'text-ink-800' : 'text-ink-400' }}">{{ $label }}</span>
                         @if (! $loop->last)<span class="h-px flex-1 bg-ink-150"></span>@endif
                     </div>
                 @endforeach
@@ -316,19 +344,30 @@ new class extends Component
                                 @error('owner')<span class="text-[11.5px] text-danger">{{ $message }}</span>@enderror
                             </div>
                             <div>
-                                <label class="mb-1 block text-[12.5px] font-semibold text-ink-700">Canal</label>
-                                <select wire:model="wChannel" class="w-full rounded-lg border border-ink-300 px-3 py-2 text-[13.5px] outline-none focus:border-brand-600">
-                                    @foreach (CampaignChannel::cases() as $ch)
-                                        <option value="{{ $ch->value }}">{{ $ch->label() }}</option>
+                                <label class="mb-1 block text-[12.5px] font-semibold text-ink-700">Type d'opération</label>
+                                <select wire:model.live="wChannel" class="w-full rounded-lg border border-ink-300 px-3 py-2 text-[13.5px] outline-none focus:border-brand-600">
+                                    @foreach (collect(App\Domains\Campaigns\Enums\CampaignChannel::cases())->groupBy(fn ($ch) => $ch->category()) as $cat => $chs)
+                                        <optgroup label="{{ $cat }}">
+                                            @foreach ($chs as $ch)
+                                                <option value="{{ $ch->value }}">{{ $ch->label() }}</option>
+                                            @endforeach
+                                        </optgroup>
                                     @endforeach
                                 </select>
                             </div>
                             <div>
-                                <label class="mb-1 block text-[12.5px] font-semibold text-ink-700">Date de la campagne</label>
+                                <label class="mb-1 block text-[12.5px] font-semibold text-ink-700">Date de l'opération</label>
                                 <input type="date" wire:model="date" class="w-full rounded-lg border border-ink-300 px-3 py-2 text-[13.5px] outline-none focus:border-brand-600">
                                 @error('date')<span class="text-[11.5px] text-danger">{{ $message }}</span>@enderror
                             </div>
+                            @error('school_id')<div class="col-span-2 text-[11.5px] text-danger">{{ $message }}</div>@enderror
                         </div>
+                        @unless ($this->contactBased())
+                            <div class="flex items-start gap-2 rounded-lg bg-brand-50 px-3.5 py-2.5 text-[12px] text-ink-600">
+                                <svg width="15" height="15" viewBox="0 0 20 20" fill="none" class="mt-0.5 flex-shrink-0 text-brand-600"><circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.5"/><path d="M10 9v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="10" cy="6.5" r="1" fill="currentColor"/></svg>
+                                <span>Action sans liste de contacts individuels : pas d'import. L'impact sera mesuré <span class="font-semibold text-ink-800">au niveau de l'école</span> (évolution des inscriptions et paiements après l'opération).</span>
+                            </div>
+                        @endunless
                     </div>
                 @endif
 
@@ -377,9 +416,17 @@ new class extends Component
                 {{-- Étape 3 : Validation --}}
                 @if ($step === 3)
                     <div class="flex flex-col gap-3">
-                        <div class="rounded-xl bg-brand-50 px-4 py-3 text-[13px] text-ink-700">Vérifiez le résumé avant l'import. Seuls les <span class="font-semibold text-ink-900">{{ $fr($preview['valid']) }} numéros valides et uniques</span> seront enregistrés puis rapprochés des parents EcolePay.</div>
+                        @if ($this->contactBased())
+                            <div class="rounded-xl bg-brand-50 px-4 py-3 text-[13px] text-ink-700">Vérifiez le résumé avant l'import. Seuls les <span class="font-semibold text-ink-900">{{ $fr($preview['valid']) }} numéros valides et uniques</span> seront enregistrés puis rapprochés des parents EcolePay.</div>
+                        @else
+                            <div class="rounded-xl bg-brand-50 px-4 py-3 text-[13px] text-ink-700">Opération sans liste de contacts : son <span class="font-semibold text-ink-900">impact sera mesuré au niveau de l'école</span> sur la fenêtre suivant la date.</div>
+                        @endif
                         <div class="grid grid-cols-2 gap-3 text-[13px]">
-                            <div class="rounded-xl border border-ink-150 px-4 py-3"><div class="text-ink-500">Contacts uniques</div><div class="text-[18px] font-bold text-ink-900">{{ $fr($preview['valid']) }}</div></div>
+                            @if ($this->contactBased())
+                                <div class="rounded-xl border border-ink-150 px-4 py-3"><div class="text-ink-500">Contacts uniques</div><div class="text-[18px] font-bold text-ink-900">{{ $fr($preview['valid']) }}</div></div>
+                            @else
+                                <div class="rounded-xl border border-ink-150 px-4 py-3"><div class="text-ink-500">Type</div><div class="text-[14px] font-semibold text-ink-900">{{ App\Domains\Campaigns\Enums\CampaignChannel::from($wChannel)->label() }}</div></div>
+                            @endif
                             <div class="rounded-xl border border-ink-150 px-4 py-3"><div class="text-ink-500">École</div><div class="text-[14px] font-semibold text-ink-900">{{ $school_id ? ($this->schools()[$school_id] ?? '—') : 'Toutes / aucune' }}</div></div>
                             <div class="rounded-xl border border-ink-150 px-4 py-3"><div class="text-ink-500">Responsable</div><div class="text-[14px] font-semibold text-ink-900">{{ $owner }}</div></div>
                             <div class="rounded-xl border border-ink-150 px-4 py-3"><div class="text-ink-500">Date</div><div class="text-[14px] font-semibold text-ink-900">{{ \Illuminate\Support\Carbon::parse($date)->locale('fr')->isoFormat('D MMM YYYY') }}</div></div>
@@ -395,13 +442,18 @@ new class extends Component
                                 <svg width="28" height="28" viewBox="0 0 20 20" fill="none"><path d="M5 10.5l3.5 3.5L15 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                             </div>
                             <div>
-                                <div class="text-[16px] font-bold text-ink-900">Import réussi</div>
-                                <div class="mt-1 text-[13px] text-ink-600">{{ $fr($preview['valid']) }} contacts enregistrés · {{ $fr($preview['invalid'] + $preview['duplicates']) }} ignorés ({{ $fr($preview['invalid']) }} invalides, {{ $fr($preview['duplicates']) }} doublons).</div>
+                                @if ($this->contactBased() && $preview)
+                                    <div class="text-[16px] font-bold text-ink-900">Import réussi</div>
+                                    <div class="mt-1 text-[13px] text-ink-600">{{ $fr($preview['valid']) }} contacts enregistrés · {{ $fr($preview['invalid'] + $preview['duplicates']) }} ignorés ({{ $fr($preview['invalid']) }} invalides, {{ $fr($preview['duplicates']) }} doublons).</div>
+                                @else
+                                    <div class="text-[16px] font-bold text-ink-900">Opération enregistrée</div>
+                                    <div class="mt-1 text-[13px] text-ink-600">L'impact est mesuré au niveau de l'école sur la fenêtre d'attribution.</div>
+                                @endif
                             </div>
-                            <a href="{{ route('campaigns.show', $createdId) }}" class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-brand-700">Voir l'analyse de la campagne</a>
+                            <a href="{{ route('campaigns.show', $createdId) }}" class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-brand-700">Voir l'analyse de l'opération</a>
                         @else
                             <div class="h-14 w-14 animate-spin rounded-full border-4 border-ink-150 border-t-brand-600"></div>
-                            <div class="text-[14px] font-semibold text-ink-800">Import et rapprochement en cours…</div>
+                            <div class="text-[14px] font-semibold text-ink-800">Enregistrement en cours…</div>
                         @endif
                     </div>
                 @endif
@@ -410,15 +462,17 @@ new class extends Component
             {{-- Footer nav --}}
             @if ($step < 4)
                 <div class="flex items-center justify-between border-t border-ink-150 px-6 py-4">
-                    <button wire:click="$set('step', {{ max(1, $step - 1) }})" @if ($step === 1) disabled @endif class="rounded-lg px-3 py-2 text-[12.5px] font-semibold text-ink-600 hover:bg-ink-100 disabled:opacity-40">Retour</button>
                     @if ($step === 1)
-                        <button wire:click="toStep2" class="rounded-lg bg-brand-600 px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-brand-700">Continuer</button>
+                        <span></span>
+                        <button wire:click="proceedFromInfo" class="rounded-lg bg-brand-600 px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-brand-700">Continuer</button>
                     @elseif ($step === 2)
+                        <button wire:click="$set('step', 1)" class="rounded-lg px-3 py-2 text-[12.5px] font-semibold text-ink-600 hover:bg-ink-100">Retour</button>
                         <button wire:click="toStep3" @if (! $preview || $preview['valid'] === 0) disabled @endif class="rounded-lg bg-brand-600 px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-brand-700 disabled:opacity-40">Continuer</button>
                     @elseif ($step === 3)
+                        <button wire:click="backFromValidation" class="rounded-lg px-3 py-2 text-[12.5px] font-semibold text-ink-600 hover:bg-ink-100">Retour</button>
                         <button wire:click="launchImport" wire:loading.attr="disabled" class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-brand-700">
-                            <span wire:loading.remove wire:target="launchImport">Lancer l'import</span>
-                            <span wire:loading wire:target="launchImport">Import…</span>
+                            <span wire:loading.remove wire:target="launchImport">{{ $this->contactBased() ? 'Lancer l\'import' : 'Enregistrer l\'opération' }}</span>
+                            <span wire:loading wire:target="launchImport">Enregistrement…</span>
                         </button>
                     @endif
                 </div>
