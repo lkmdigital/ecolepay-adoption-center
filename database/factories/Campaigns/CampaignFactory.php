@@ -2,9 +2,9 @@
 
 namespace Database\Factories\Campaigns;
 
+use App\Domains\Campaigns\Enums\CampaignChannel;
 use App\Domains\Campaigns\Enums\CampaignStatus;
 use App\Domains\Campaigns\Models\Campaign;
-use App\Shared\Models\Channel;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -13,45 +13,25 @@ use Illuminate\Support\Str;
  */
 class CampaignFactory extends Factory
 {
+    protected $model = Campaign::class;
+
     public function definition(): array
     {
         $name = 'Relance '.fake()->monthName();
 
         return [
-            'uuid' => (string) Str::uuid(),
             'name' => $name,
             'slug' => Str::slug($name).'-'.Str::random(6),
-            'objective' => fake()->randomElement(['activation', 'reactivation', 'conversion', 'information']),
-            'channel_id' => Channel::factory(),
-            'target_segment' => ['stage' => 'registered', 'region' => 'Abidjan'],
-            'message_template' => 'Bonjour, réglez vos frais de scolarité via EcolePay.',
-            'status' => CampaignStatus::Draft,
-            'currency' => 'XOF',
-            'attribution_window_days' => 14,
+            'owner' => fake()->name(),
+            'channel' => CampaignChannel::WhatsApp,
+            'status' => CampaignStatus::Completed,
+            'campaign_date' => now()->subDays(20)->toDateString(),
+            'attribution_window_days' => 30,
         ];
     }
 
-    public function sent(): static
+    public function planned(): static
     {
-        return $this->state(fn () => [
-            'status' => CampaignStatus::Sent,
-            'started_at' => now()->subDays(20),
-            'completed_at' => now()->subDays(20),
-            'recipient_count' => fake()->numberBetween(100, 5000),
-        ]);
-    }
-
-    /**
-     * Envoyée mais fenêtre d'attribution encore ouverte : le taux de conversion
-     * n'est pas encore mesurable.
-     */
-    public function pendingAttribution(): static
-    {
-        return $this->state(fn () => [
-            'status' => CampaignStatus::Sent,
-            'started_at' => now()->subDays(2),
-            'completed_at' => now()->subDays(2),
-            'recipient_count' => fake()->numberBetween(100, 5000),
-        ]);
+        return $this->state(fn () => ['status' => CampaignStatus::Planned, 'campaign_date' => null]);
     }
 }

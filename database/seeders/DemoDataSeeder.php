@@ -19,11 +19,11 @@ use App\Shared\Enums\AdoptionStageCode;
 use App\Shared\Models\AdoptionRuleVersion;
 use App\Shared\Models\AdoptionStage;
 use App\Shared\Models\CalendarDate;
-use App\Shared\Models\Channel;
 use App\Shared\Models\EventType;
 use App\Shared\Models\PaymentMethod;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
@@ -533,79 +533,65 @@ class DemoDataSeeder extends Seeder
      */
     private function createCampaigns(array $schools): void
     {
-        $sms = Channel::query()->where('code', 'sms')->first();
-        $whatsapp = Channel::query()->where('code', 'whatsapp')->first();
         $author = User::query()->where('email', 'marketing@demo.eac')->first();
 
-        if (! $sms || ! $author) {
+        if (! $author) {
             return;
         }
 
         $definitions = [
-            ['Relance inscrits non payeurs', 'conversion', AdoptionStageCode::Registered, $sms, CampaignStatus::Sent, 25],
-            ['Réactivation parents à risque', 'reactivation', AdoptionStageCode::AtRisk, $whatsapp ?? $sms, CampaignStatus::Sent, 5],
-            ['Rentrée 2026', 'information', null, $sms, CampaignStatus::Draft, null],
+            ['Relance inscrits non payeurs', AdoptionStageCode::Registered, 'whatsapp', CampaignStatus::Completed, 25],
+            ['Réactivation parents à risque', AdoptionStageCode::AtRisk, 'sms', CampaignStatus::Completed, 5],
+            ['Rentrée 2026', null, 'whatsapp', CampaignStatus::Planned, null],
         ];
 
-        foreach ($definitions as [$name, $objective, $targetStage, $channel, $status, $daysAgo]) {
+        foreach ($definitions as [$name, $targetStage, $channel, $status, $daysAgo]) {
             $campaign = Campaign::query()->create([
-                'uuid' => (string) Str::uuid(),
                 'name' => $name,
                 'slug' => Str::slug($name).'-'.Str::random(5),
-                'objective' => $objective,
-                'target_stage_id' => $targetStage ? $this->stageIds[$targetStage->value] : null,
-                'channel_id' => $channel->id,
-                'target_segment' => ['stage' => $targetStage?->value, 'region' => 'Abidjan'],
-                'message_template' => 'Bonjour, réglez vos frais de scolarité sur EcolePay.',
+                'description' => 'Campagne de démonstration (contacts fictifs).',
+                'owner' => 'Équipe Marketing',
+                'channel' => $channel,
                 'status' => $status,
-                'currency' => config('eac.currency'),
-                'attribution_window_days' => 14,
+                'campaign_date' => $daysAgo ? now()->subDays($daysAgo)->toDateString() : null,
+                'attribution_window_days' => 30,
                 'created_by_user_id' => $author->id,
-                'started_at' => $daysAgo ? now()->subDays($daysAgo) : null,
-                'completed_at' => $daysAgo ? now()->subDays($daysAgo) : null,
             ]);
 
-            if ($status !== CampaignStatus::Sent || $targetStage === null) {
+            if ($status !== CampaignStatus::Completed || $targetStage === null) {
                 continue;
             }
 
-            $this->createContacts($campaign, $targetStage, $channel, $daysAgo);
+            $this->createContacts($campaign, $targetStage);
         }
     }
 
-    private function createContacts(Campaign $campaign, AdoptionStageCode $targetStage, Channel $channel, int $daysAgo): void
+    private function createContacts(Campaign $campaign, AdoptionStageCode $targetStage): void
     {
-        $sentAt = now()->subDays($daysAgo);
-
         $targets = ParentJourney::query()
             ->onlyTestData()
             ->where('current_stage_id', $this->stageIds[$targetStage->value])
             ->limit(150)
-            ->get(['parent_id', 'school_id']);
+            ->pluck('parent_id')
+            ->unique();
 
+        $parents = DB::table('dim_parents')->whereIn('id', $targets)
+            ->get(['id', 'phone_e164', 'phone_hash', 'account_created_at'])->keyBy('id');
+
+        $campaignDate = $campaign->campaign_date;
         $rows = [];
-
-        foreach ($targets as $target) {
-            $delivered = random_int(1, 10) > 1;
-            $opened = $delivered && random_int(1, 10) > 4;
-
+        foreach ($targets as $parentId) {
+            $p = $parents[$parentId] ?? null;
             $rows[] = [
                 'campaign_id' => $campaign->id,
-                'parent_id' => $target->parent_id,
-                'school_id' => $target->school_id,
-                'channel_id' => $channel->id,
-                'date_id' => CalendarDate::keyFor($sentAt),
-                'attempt_number' => 1,
-                'sent_at' => $sentAt,
-                'delivered_at' => $delivered ? $sentAt->copy()->addMinutes(random_int(1, 30)) : null,
-                'opened_at' => $opened ? $sentAt->copy()->addHours(random_int(1, 20)) : null,
-                'delivery_status' => $opened ? 'opened' : ($delivered ? 'delivered' : 'failed'),
-                'failure_reason' => $delivered ? null : 'Numéro injoignable',
-                'actual_cost' => $channel->default_unit_cost,
-                'currency' => config('eac.currency'),
-                // État figé à l'envoi : sans lui, impossible de juger le ciblage
-                // a posteriori, l'état du parent ayant pu changer depuis.
-                'stage_id_at_send' => $this->stageIds[$targetStage->value],
+                'raw_phone' => $p?->phone_e164,
+                'phone_e164' => $p?->phone_e164,
+                'phone_hash' => $p?->phone_hash,
+                'parent_id' => $parentId,
+                'full_name' => null,
+                'is_valid' => true,
+                'had_account_before' => $p && $p->account_created_at && $campaignDate
+                    && Carbon::parse($p->account_created_at) < $campaignDate,
                 'is_test' => true,
                 'created_at' => now(),
                 'updated_at' => now(),
@@ -616,6 +602,6 @@ class DemoDataSeeder extends Seeder
             CampaignContact::query()->insert($chunk);
         }
 
-        $campaign->update(['recipient_count' => count($rows)]);
+        $campaign->update(['contacts_count' => count($rows), 'valid_count' => count($rows)]);
     }
 }

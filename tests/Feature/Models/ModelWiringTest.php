@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Models;
 
+use App\Domains\Campaigns\Enums\CampaignChannel;
 use App\Domains\Campaigns\Enums\CampaignStatus;
 use App\Domains\Campaigns\Models\Campaign;
 use App\Domains\Parents\Models\ParentProfile;
@@ -122,15 +123,14 @@ class ModelWiringTest extends TestCase
     }
 
     #[Test]
-    public function campaign_casts_status_and_segment(): void
+    public function campaign_casts_status_and_channel(): void
     {
         $campaign = Campaign::factory()->create();
 
         $this->assertInstanceOf(CampaignStatus::class, $campaign->status);
-        $this->assertSame(CampaignStatus::Draft, $campaign->status);
-        $this->assertTrue($campaign->status->isEditable());
-        $this->assertIsArray($campaign->target_segment);
-        $this->assertSame('Abidjan', $campaign->target_segment['region']);
+        $this->assertSame(CampaignStatus::Completed, $campaign->status);
+        $this->assertInstanceOf(CampaignChannel::class, $campaign->channel);
+        $this->assertSame(CampaignChannel::WhatsApp, $campaign->channel);
     }
 
     #[Test]
@@ -143,16 +143,6 @@ class ModelWiringTest extends TestCase
         $this->assertSoftDeleted('dim_campaigns', ['id' => $campaign->id]);
         $this->assertSame(0, Campaign::query()->count());
         $this->assertSame(1, Campaign::withTrashed()->count());
-    }
-
-    #[Test]
-    public function the_attribution_window_gates_evaluation(): void
-    {
-        $closed = Campaign::factory()->sent()->create(['attribution_window_days' => 14]);
-        $open = Campaign::factory()->pendingAttribution()->create(['attribution_window_days' => 14]);
-
-        $this->assertTrue($closed->attributionWindowHasClosed());
-        $this->assertFalse($open->attributionWindowHasClosed());
     }
 
     #[Test]

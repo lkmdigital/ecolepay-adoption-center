@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Seeders;
 
+use App\Domains\Campaigns\Enums\CampaignStatus;
 use App\Domains\Campaigns\Models\Campaign;
 use App\Domains\Campaigns\Models\CampaignContact;
 use App\Domains\Parents\Models\ParentJourney;
@@ -138,13 +139,14 @@ class DemoDataSeederTest extends TestCase
     }
 
     #[Test]
-    public function campaign_contacts_freeze_the_stage_at_send_time(): void
+    public function campaign_contacts_are_matched_and_flagged_as_test(): void
     {
         $contacts = CampaignContact::query()->onlyTestData()->get();
 
         $this->assertGreaterThan(0, $contacts->count());
         foreach ($contacts as $contact) {
-            $this->assertNotNull($contact->stage_id_at_send);
+            $this->assertNotNull($contact->parent_id);
+            $this->assertTrue($contact->is_test);
         }
     }
 
@@ -157,14 +159,14 @@ class DemoDataSeederTest extends TestCase
     }
 
     #[Test]
-    public function sent_campaigns_have_contacts(): void
+    public function completed_campaigns_have_contacts(): void
     {
-        $sent = Campaign::query()->sent()->get();
+        $completed = Campaign::query()->where('status', CampaignStatus::Completed)->get();
 
-        $this->assertGreaterThan(0, $sent->count());
-        foreach ($sent as $campaign) {
+        $this->assertGreaterThan(0, $completed->count());
+        foreach ($completed as $campaign) {
             $this->assertGreaterThan(0, $campaign->contacts()->count());
-            $this->assertSame($campaign->contacts()->count(), $campaign->recipient_count);
+            $this->assertSame($campaign->contacts()->count(), $campaign->contacts_count);
         }
     }
 }
