@@ -116,6 +116,10 @@ new class extends Component
             <button type="button" disabled title="{{ $ft }}" class="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg border border-dashed border-ink-200 bg-ink-50 px-3 py-2 text-[13px] font-medium text-ink-400">{{ $fl }}<span class="rounded bg-ink-100 px-1 text-[9px] font-bold uppercase">à venir</span></button>
         @endforeach
         <div class="ml-auto flex items-center gap-2">
+            <a href="{{ route('analytics.lab') }}" wire:navigate class="inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3 py-2 text-[12.5px] font-semibold text-white hover:bg-brand-700">
+                <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M7 3v4.5L3.5 14A2 2 0 005.2 17h9.6a2 2 0 001.7-3L13 7.5V3M6 3h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                Laboratoire d'Analyses
+            </a>
             <button wire:click="export" class="inline-flex items-center gap-1.5 rounded-lg border border-ink-200 bg-white px-3 py-2 text-[12.5px] font-semibold text-ink-800 hover:bg-ink-50">
                 <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="M10 3v9m0 0l-3.2-3.2M10 12l3.2-3.2M4 15.5h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 Exporter
