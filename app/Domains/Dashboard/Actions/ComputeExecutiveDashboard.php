@@ -45,6 +45,7 @@ final class ComputeExecutiveDashboard
             'period' => $period,
             'kpis' => $this->kpis($start, $end, $prevStart, $prevEnd),
             'situation' => $this->situation(),
+            'funnel' => $this->funnel(),
             'health' => $this->health(),
             'repartition' => $this->repartition(),
             'topSchools' => $this->topSchools(),
@@ -263,6 +264,41 @@ final class ComputeExecutiveDashboard
             'subRevenue' => array_map(fn ($v) => round($v / 1_000_000, 2), $subRevenue),
             'events' => $events,
         ];
+    }
+
+    /* --------------------------------------------------------------- Funnel */
+
+    /**
+     * Entonnoir d'adoption officiel : connus → inscrits → adoptants (⭐ 1ᵉʳ
+     * paiement) → engagés (récurrents), avec le taux de conversion entre étapes.
+     *
+     * @return list<array{label: string, value: int, conv: ?float, star: bool}>
+     */
+    private function funnel(): array
+    {
+        $connus = (int) DB::table('dim_parents')->where('is_test', false)->count();
+        $inscrits = (int) DB::table('dim_parents')->where('is_test', false)->whereNotNull('account_created_at')->count();
+        $adoptants = (int) DB::table('fact_parent_journeys')->where('is_test', false)->where('has_ever_paid', true)->distinct()->count('parent_id');
+        $engages = (int) DB::query()->fromSub(
+            DB::table('fact_parent_journeys')->where('is_test', false)->where('has_ever_paid', true)
+                ->groupBy('parent_id')->havingRaw('SUM(successful_payment_count) >= 2')->selectRaw('parent_id'),
+            'sub'
+        )->count();
+
+        $stages = [
+            ['Parents connus', $connus, false],
+            ['Parents inscrits', $inscrits, false],
+            ['Parents adoptants', $adoptants, true],
+            ['Parents engagés', $engages, false],
+        ];
+        $out = [];
+        $prev = null;
+        foreach ($stages as [$label, $value, $star]) {
+            $out[] = ['label' => $label, 'value' => $value, 'conv' => $prev !== null && $prev > 0 ? round($value / $prev * 100, 1) : null, 'star' => $star];
+            $prev = $value;
+        }
+
+        return $out;
     }
 
     /* ---------------------------------------------------------- Répartition */

@@ -43,6 +43,7 @@ final class ListSchoolsForPilotage
             ->selectRaw('COUNT(DISTINCT j.parent_id) as known')
             ->selectRaw('COUNT(DISTINCT CASE WHEN p.account_created_at IS NOT NULL THEN j.parent_id END) as inscrits')
             ->selectRaw('COUNT(DISTINCT CASE WHEN j.has_ever_paid = 1 THEN j.parent_id END) as actifs')
+            ->selectRaw('COUNT(DISTINCT CASE WHEN j.successful_payment_count >= 2 THEN j.parent_id END) as engages')
             ->selectRaw('COUNT(DISTINCT CASE WHEN j.first_payment_at >= ? THEN j.parent_id END) as recent', [Carbon::now()->subDays(90)])
             ->get();
 
@@ -76,6 +77,7 @@ final class ListSchoolsForPilotage
                 'known' => $known,
                 'inscrits' => (int) $r->inscrits,
                 'actifs' => $actifs,
+                'engages' => (int) $r->engages,
                 'rate' => $rate,
                 'revenue' => $revenue,
                 'potential' => $potential,

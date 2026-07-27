@@ -315,6 +315,25 @@ new class extends Component
     {{-- ══════════ 2. POURQUOI ? ══════════ --}}
     {!! $chapter(2, 'Pourquoi ?', 'Ce qui freine la conversion — et ce qui fait bouger la courbe', $leadWhy) !!}
 
+    {{-- Parcours d'adoption (funnel) --}}
+    <div class="mb-4 rounded-[16px] border border-ink-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
+        <div class="mb-4 text-[15px] font-semibold text-ink-900">Parcours d'adoption</div>
+        @php $funnelMax = max(1, $this->data['funnel'][0]['value']); @endphp
+        <div class="flex flex-col gap-2.5">
+            @foreach ($this->data['funnel'] as $i => $stage)
+                <div>
+                    <div class="mb-1 flex items-center justify-between text-[13px]">
+                        <span class="font-medium text-ink-800">{{ $stage['label'] }}{{ $stage['star'] ? ' ⭐' : '' }}</span>
+                        <span class="font-mono font-semibold text-ink-900">{{ $fr($stage['value']) }}@if ($stage['conv'] !== null)<span class="ml-2 text-[11.5px] font-normal text-ink-400">{{ number_format($stage['conv'], 0, ',', ' ') }} % de l'étape précédente</span>@endif</span>
+                    </div>
+                    <div class="h-7 overflow-hidden rounded-md bg-ink-100">
+                        <div class="flex h-full items-center rounded-md" style="width: {{ max(3, round($stage['value'] / $funnelMax * 100)) }}%; background: linear-gradient(90deg, #173C82, #2554C7, #4E7DE0); opacity: {{ 1 - $i * 0.12 }}"></div>
+                    </div>
+                </div>
+            @endforeach
+        </div>
+    </div>
+
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div class="rounded-[16px] border border-ink-200 bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
             <div class="mb-1 text-[15px] font-semibold text-ink-900">L'entonnoir d'adoption</div>

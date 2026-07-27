@@ -33,7 +33,7 @@ new class extends Component
     public ?int $selectedId = null;
 
     /** Colonnes optionnelles visibles (nom / adoption / santé / actions sont toujours affichées). */
-    public array $cols = ['code', 'students', 'known', 'inscrits', 'actifs', 'revenue', 'potential', 'lastActivity', 'badge'];
+    public array $cols = ['code', 'students', 'known', 'inscrits', 'actifs', 'engages', 'revenue', 'potential', 'lastActivity', 'badge'];
 
     #[Computed]
     public function portfolio(): array
@@ -176,9 +176,9 @@ new class extends Component
 
         return response()->streamDownload(function () use ($rows) {
             $out = fopen('php://output', 'w');
-            fputcsv($out, ['École', 'Code', 'Élèves', 'Parents', 'Inscrits', 'Adoptants', 'Adoption %', 'Score santé', 'CA', 'Potentiel']);
+            fputcsv($out, ['École', 'Code', 'Élèves', 'Parents', 'Inscrits', 'Adoptants', 'Engagés', 'Adoption %', 'Score santé', 'CA', 'Potentiel']);
             foreach ($rows as $s) {
-                fputcsv($out, [$s['name'], $s['code'], $s['students'], $s['known'], $s['inscrits'], $s['actifs'], $s['rate'], $s['healthScore'], $s['revenue'], $s['potential']]);
+                fputcsv($out, [$s['name'], $s['code'], $s['students'], $s['known'], $s['inscrits'], $s['actifs'], $s['engages'], $s['rate'], $s['healthScore'], $s['revenue'], $s['potential']]);
             }
             fclose($out);
         }, 'ecoles-'.now()->format('Y-m-d').'.csv');
@@ -216,7 +216,7 @@ new class extends Component
         return '<svg width="'.$w.'" height="'.$h.'" viewBox="0 0 '.$w.' '.$h.'" fill="none" class="overflow-visible"><polygon points="0,'.$h.' '.$line.' '.$w.','.$h.'" fill="'.$color.'" opacity="0.09"/><polyline points="'.$line.'" fill="none" stroke="'.$color.'" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     };
 
-    $colLabels = ['code' => 'Code', 'students' => 'Élèves', 'known' => 'Parents', 'inscrits' => 'Inscrits', 'actifs' => 'Adoptants', 'revenue' => 'CA', 'potential' => 'Potentiel', 'lastActivity' => 'Dernière activité', 'badge' => 'Statut'];
+    $colLabels = ['code' => 'Code', 'students' => 'Élèves', 'known' => 'Parents', 'inscrits' => 'Inscrits', 'actifs' => 'Adoptants', 'engages' => 'Engagés', 'revenue' => 'CA', 'potential' => 'Potentiel', 'lastActivity' => 'Dernière activité', 'badge' => 'Statut'];
     $numericSorts = ['healthScore' => 'Score de santé', 'rate' => 'Adoption', 'known' => 'Parents', 'revenue' => 'Revenus', 'recent' => 'Progression', 'potential' => 'Potentiel'];
     $adoptionLevels = ['' => 'Toutes', 'critique' => 'Critique (< 20 %)', 'faible' => 'Faible (20–40 %)', 'moyen' => 'Moyen (40–70 %)', 'excellent' => 'Excellent (> 70 %)'];
     $modelLevels = ['' => 'Tous modèles', 'parent_paid' => 'Abonnement parent', 'bundled' => 'Abonnement inclus'];
@@ -369,6 +369,7 @@ new class extends Component
                             @if (in_array('known', $cols))<th class="cursor-pointer px-3 py-3 text-right hover:text-ink-800" wire:click="sortByCol('known')">Parents @if($sort==='known')<span class="text-brand-600">{{ $dir==='desc'?'↓':'↑' }}</span>@endif</th>@endif
                             @if (in_array('inscrits', $cols))<th class="px-3 py-3 text-right">Inscrits</th>@endif
                             @if (in_array('actifs', $cols))<th class="px-3 py-3 text-right">Adoptants</th>@endif
+                            @if (in_array('engages', $cols))<th class="px-3 py-3 text-right">Engagés</th>@endif
                             <th class="cursor-pointer px-3 py-3 text-right hover:text-ink-800" wire:click="sortByCol('rate')">Adoption @if($sort==='rate')<span class="text-brand-600">{{ $dir==='desc'?'↓':'↑' }}</span>@endif</th>
                             <th class="cursor-pointer px-3 py-3 text-center hover:text-ink-800" wire:click="sortByCol('healthScore')">Santé @if($sort==='healthScore')<span class="text-brand-600">{{ $dir==='desc'?'↓':'↑' }}</span>@endif</th>
                             @if (in_array('revenue', $cols))<th class="cursor-pointer px-3 py-3 text-right hover:text-ink-800" wire:click="sortByCol('revenue')">CA @if($sort==='revenue')<span class="text-brand-600">{{ $dir==='desc'?'↓':'↑' }}</span>@endif</th>@endif
@@ -392,6 +393,7 @@ new class extends Component
                                 @if (in_array('known', $cols))<td class="px-3 py-3 text-right font-mono text-[13px] text-ink-700">{{ $fr($s['known']) }}</td>@endif
                                 @if (in_array('inscrits', $cols))<td class="px-3 py-3 text-right font-mono text-[13px] text-ink-700">{{ $fr($s['inscrits']) }}</td>@endif
                                 @if (in_array('actifs', $cols))<td class="px-3 py-3 text-right font-mono text-[13px] font-semibold text-ink-900">{{ $fr($s['actifs']) }}</td>@endif
+                                @if (in_array('engages', $cols))<td class="px-3 py-3 text-right font-mono text-[13px] text-ink-700">{{ $fr($s['engages']) }}</td>@endif
                                 <td class="px-3 py-3 text-right"><span class="font-mono text-[13px] font-bold" style="color: {{ $s['badge']['color'] }}">{{ number_format($s['rate'], 1, ',', ' ') }} %</span></td>
                                 <td class="px-3 py-3">
                                     <div class="flex items-center justify-center gap-1.5">

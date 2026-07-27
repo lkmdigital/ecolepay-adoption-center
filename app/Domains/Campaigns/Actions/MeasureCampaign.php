@@ -97,7 +97,14 @@ final class MeasureCampaign
             'revenue' => (int) $revenue,
             'conversion' => $conversion,
             'window' => [$d->toDateString(), $end->toDateString()],
-            'funnel' => $this->funnel($contacts, $matched, $newAccounts + $alreadyRegistered, $paidAllTime, $active),
+            'funnel' => $this->buildFunnel([
+                ['Contacts importés', (int) $campaign->contacts_count],
+                ['Numéros valides', $contacts],
+                ["Parents connus d'EcolePay", $matched],
+                ['Comptes créés', $newAccounts + $alreadyRegistered],
+                ['Premier paiement ⭐', $paidAllTime],
+                ['Parents engagés', $active],
+            ]),
             'repartition' => [
                 ['label' => 'Nouveaux inscrits (après campagne)', 'value' => $newAccounts, 'color' => '#22C55E'],
                 ['label' => 'Déjà inscrits (avant)', 'value' => $alreadyRegistered, 'color' => '#38BDF8'],
@@ -209,26 +216,6 @@ final class MeasureCampaign
         }
 
         return ['labels' => $labels, 'accounts' => $accSeries, 'payments' => $paySeries];
-    }
-
-    /** @return list<array{label:string, value:int, conv:?float}> */
-    private function funnel(int $contacts, int $matched, int $withAccount, int $paid, int $active): array
-    {
-        $stages = [
-            ['Contacts ciblés', $contacts],
-            ['Connus d\'EcolePay', $matched],
-            ['Comptes créés', $withAccount],
-            ['Premier paiement ⭐', $paid],
-            ['Parents engagés', $active],
-        ];
-        $out = [];
-        $prev = null;
-        foreach ($stages as [$label, $value]) {
-            $out[] = ['label' => $label, 'value' => $value, 'conv' => $prev !== null && $prev > 0 ? round($value / $prev * 100, 1) : null];
-            $prev = $value;
-        }
-
-        return $out;
     }
 
     /**

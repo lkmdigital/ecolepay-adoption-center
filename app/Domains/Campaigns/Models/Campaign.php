@@ -29,7 +29,7 @@ class Campaign extends Model
 
     protected $fillable = [
         'name', 'slug', 'description', 'school_id', 'owner', 'channel', 'status',
-        'campaign_date', 'attribution_window_days', 'contacts_count', 'valid_count',
+        'campaign_date', 'attribution_window_days', 'cost', 'contacts_count', 'valid_count',
         'invalid_count', 'duplicate_count', 'created_by_user_id',
     ];
 

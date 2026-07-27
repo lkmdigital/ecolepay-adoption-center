@@ -44,6 +44,8 @@ new class extends Component
 
     public string $date = '';
 
+    public $cost = null;
+
     public $file;
 
     public ?array $preview = null;
@@ -75,7 +77,7 @@ new class extends Component
 
     public function openWizard(): void
     {
-        $this->reset(['step', 'name', 'description', 'school_id', 'owner', 'wChannel', 'date', 'file', 'preview', 'createdId']);
+        $this->reset(['step', 'name', 'description', 'school_id', 'owner', 'wChannel', 'date', 'cost', 'file', 'preview', 'createdId']);
         $this->step = 1;
         $this->wChannel = 'whatsapp';
         $this->date = now()->toDateString();
@@ -142,6 +144,7 @@ new class extends Component
             'status' => 'completed',
             'campaign_date' => $this->date,
             'attribution_window_days' => 30,
+            'cost' => $this->cost !== null && $this->cost !== '' ? (int) $this->cost : null,
         ]);
 
         // Import des contacts seulement pour les canaux à liste.
@@ -359,6 +362,10 @@ new class extends Component
                                 <label class="mb-1 block text-[12.5px] font-semibold text-ink-700">Date de l'opération</label>
                                 <input type="date" wire:model="date" class="w-full rounded-lg border border-ink-300 px-3 py-2 text-[13.5px] outline-none focus:border-brand-600">
                                 @error('date')<span class="text-[11.5px] text-danger">{{ $message }}</span>@enderror
+                            </div>
+                            <div class="col-span-2">
+                                <label class="mb-1 block text-[12.5px] font-semibold text-ink-700">Budget / coût <span class="text-ink-400">(FCFA, optionnel)</span></label>
+                                <input type="number" min="0" wire:model="cost" placeholder="Ex. 150000 — pour mesurer le coût par adoptant" class="w-full rounded-lg border border-ink-300 px-3 py-2 text-[13.5px] outline-none focus:border-brand-600">
                             </div>
                             @error('school_id')<div class="col-span-2 text-[11.5px] text-danger">{{ $message }}</div>@enderror
                         </div>

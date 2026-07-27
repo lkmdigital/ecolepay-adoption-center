@@ -128,6 +128,12 @@ new class extends Component
     $summaryCards = $isSchool
         ? [['Nouveaux comptes', $fr($m['newAccounts'])], ['Nouveaux adoptants', $fr($m['newPayments'])], ['Actifs (école)', $fr($m['active'])], ['Conversion', number_format($m['conversion'], 1, ',', ' ').' %'], ['Revenus', $m['revenue'] > 0 ? $money($m['revenue']) : '—'], ['Type', $c->channel->label()]]
         : [['Contacts', $fr($m['contacts'])], ['Rapprochés', $fr($m['matched'])], ['Nouveaux comptes', $fr($m['newAccounts'])], ['Nouveaux adoptants', $fr($m['newPayments'])], ['Conversion', number_format($m['conversion'], 1, ',', ' ').' %'], ['Revenus', $m['revenue'] > 0 ? $money($m['revenue']) : '—']];
+
+    // Coût par adoptant : seulement si un budget a été renseigné.
+    if ($c->cost) {
+        $costPer = $m['newPayments'] > 0 ? (int) round($c->cost / $m['newPayments']) : null;
+        $summaryCards[] = ['Coût / adoptant', $costPer !== null ? $money($costPer) : '—'];
+    }
 @endphp
 
 <div class="mx-auto max-w-[1480px]">
