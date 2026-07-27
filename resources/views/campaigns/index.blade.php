@@ -170,8 +170,8 @@ new class extends Component
         ['Campagnes', $fr($k['campaigns']), 'total menées', 'var(--color-brand-50)', 'var(--color-brand-600)'],
         ['Contacts importés', $fr($k['contacts']), 'numéros ciblés', 'var(--color-ink-100)', 'var(--color-ink-800)'],
         ['Nouveaux comptes', $fr($k['newAccounts']), 'créés après campagne', 'var(--color-brand-50)', 'var(--color-brand-600)'],
-        ['Nouveaux payeurs', $fr($k['newActive']), 'premier paiement attribué', 'var(--color-success-soft)', 'var(--color-success)'],
-        ['Taux de conversion', number_format($k['conversion'], 1, ',', ' ').' %', 'contacts → payeurs', 'var(--color-warning-soft)', 'var(--color-warning)'],
+        ['Nouveaux adoptants', $fr($k['newActive']), 'premier paiement attribué', 'var(--color-success-soft)', 'var(--color-success)'],
+        ['Taux de conversion', number_format($k['conversion'], 1, ',', ' ').' %', 'contacts → adoptants', 'var(--color-warning-soft)', 'var(--color-warning)'],
         ['Revenus générés', $money($k['revenue']), 'attribués aux campagnes', 'var(--color-success-soft)', 'var(--color-success)'],
     ];
 @endphp
@@ -260,7 +260,7 @@ new class extends Component
                         <th class="px-3 py-3 text-left">Date</th>
                         <th class="px-3 py-3 text-right">Contacts</th>
                         <th class="px-3 py-3 text-right">Comptes</th>
-                        <th class="px-3 py-3 text-right">Payeurs</th>
+                        <th class="px-3 py-3 text-right">Adoptants</th>
                         <th class="px-3 py-3 text-right">Conversion</th>
                         <th class="px-3 py-3 text-right">Revenus</th>
                         <th class="px-3 py-3 text-left">Statut</th>

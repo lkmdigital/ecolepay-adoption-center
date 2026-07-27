@@ -230,11 +230,11 @@ final class ComputeSchoolProfile
     private function funnel(array $f): array
     {
         $stages = [
-            ['Numéros connus', $f['known']],
+            ['Parents connus', $f['known']],
             ['Comptes créés', $f['inscrits']],
-            ['Premier paiement', $f['actifs']],
+            ['Premier paiement ⭐', $f['actifs']],
             ['Paiements récurrents', $f['recurrents']],
-            ['Parents fidèles', $f['fideles']],
+            ['Parents engagés', $f['fideles']],
         ];
 
         $out = [];

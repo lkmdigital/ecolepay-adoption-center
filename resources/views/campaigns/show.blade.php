@@ -126,8 +126,8 @@ new class extends Component
     [$sfg, $sbg] = $c->status->colors();
     $isSchool = $m['mode'] !== 'contacts';
     $summaryCards = $isSchool
-        ? [['Nouveaux comptes', $fr($m['newAccounts'])], ['Nouveaux payeurs', $fr($m['newPayments'])], ['Actifs (école)', $fr($m['active'])], ['Conversion', number_format($m['conversion'], 1, ',', ' ').' %'], ['Revenus', $m['revenue'] > 0 ? $money($m['revenue']) : '—'], ['Type', $c->channel->label()]]
-        : [['Contacts', $fr($m['contacts'])], ['Rapprochés', $fr($m['matched'])], ['Nouveaux comptes', $fr($m['newAccounts'])], ['Nouveaux payeurs', $fr($m['newPayments'])], ['Conversion', number_format($m['conversion'], 1, ',', ' ').' %'], ['Revenus', $m['revenue'] > 0 ? $money($m['revenue']) : '—']];
+        ? [['Nouveaux comptes', $fr($m['newAccounts'])], ['Nouveaux adoptants', $fr($m['newPayments'])], ['Actifs (école)', $fr($m['active'])], ['Conversion', number_format($m['conversion'], 1, ',', ' ').' %'], ['Revenus', $m['revenue'] > 0 ? $money($m['revenue']) : '—'], ['Type', $c->channel->label()]]
+        : [['Contacts', $fr($m['contacts'])], ['Rapprochés', $fr($m['matched'])], ['Nouveaux comptes', $fr($m['newAccounts'])], ['Nouveaux adoptants', $fr($m['newPayments'])], ['Conversion', number_format($m['conversion'], 1, ',', ' ').' %'], ['Revenus', $m['revenue'] > 0 ? $money($m['revenue']) : '—']];
 @endphp
 
 <div class="mx-auto max-w-[1480px]">

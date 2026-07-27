@@ -117,7 +117,7 @@ final class ComputeExecutiveDashboard
         return [
             'strategic' => [
                 ['key' => 'adoption', 'label' => 'Adoption globale', 'value' => $adoption, 'format' => 'pct', 'delta' => $this->adoptionDelta($connus, $prevEnd), 'spark' => $spark['adoption'], 'sub' => 'le chiffre suivi par la Direction'],
-                ['key' => 'actifs', 'label' => 'Parents actifs', 'value' => $actifs, 'format' => 'int', 'delta' => $this->deltaAdopters($start, $end, $prevStart, $prevEnd), 'spark' => $spark['actifs'], 'sub' => "ont payé via l'app"],
+                ['key' => 'actifs', 'label' => 'Parents adoptants', 'value' => $actifs, 'format' => 'int', 'delta' => $this->deltaAdopters($start, $end, $prevStart, $prevEnd), 'spark' => $spark['actifs'], 'sub' => '1ᵉʳ paiement effectué (adoption)'],
                 ['key' => 'ca_pay', 'label' => 'Revenu paiements', 'value' => $revenue, 'format' => 'money', 'delta' => $this->deltaRevenue($start, $end, $prevStart, $prevEnd), 'spark' => $spark['revenue'], 'sub' => "volume payé via l'app"],
                 ['key' => 'potentiel', 'label' => 'Potentiel restant', 'value' => $potential, 'format' => 'money', 'delta' => null, 'spark' => null, 'sub' => 'abonnements non débloqués · estimé'],
             ],
@@ -290,7 +290,7 @@ final class ComputeExecutiveDashboard
         return [
             ['label' => 'Connus non inscrits', 'value' => max($connus - $inscrits, 0), 'color' => '#94A3B8'],
             ['label' => 'Inscrits non payeurs', 'value' => max($inscrits - $actifs, 0), 'color' => '#38BDF8'],
-            ['label' => 'Actifs', 'value' => max($actifs - $inactifs, 0), 'color' => '#22C55E'],
+            ['label' => 'Adoptants', 'value' => max($actifs - $inactifs, 0), 'color' => '#22C55E'],
             ['label' => 'Inactifs (à risque · perdus)', 'value' => $inactifs, 'color' => '#F59E0B'],
         ];
     }

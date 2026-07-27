@@ -33,7 +33,7 @@ new class extends Component
             fputcsv($out, ['Indicateur', 'Valeur']);
             foreach ([
                 'Élèves' => $k['students'], 'Parents connus' => $k['known'], 'Comptes créés' => $k['inscrits'],
-                'Parents actifs' => $k['actifs'], 'Paiements réalisés' => $k['paymentsCount'],
+                'Parents adoptants' => $k['actifs'], 'Paiements réalisés' => $k['paymentsCount'],
                 'Taux adoption %' => $k['rate'], 'Score de santé' => $p['health']['score'],
                 'Chiffre d\'affaires' => $k['revenue'], 'Potentiel restant' => $k['potential'],
             ] as $label => $value) {
@@ -69,7 +69,7 @@ new class extends Component
         ['Élèves', $fr($k['students']), 'eleves'],
         ['Numéros de parents', $fr($k['known']), 'parents'],
         ['Comptes créés', $fr($k['inscrits']), 'inscrits'],
-        ['Parents actifs', $fr($k['actifs']), 'actifs'],
+        ['Parents adoptants', $fr($k['actifs']), 'actifs'],
         ['Parents abonnés', $k['abonnes'] > 0 ? $fr($k['abonnes']) : '—', 'sub'],
         ['Paiements réalisés', $fr($k['paymentsCount']), 'pay'],
         ["Chiffre d'affaires", $money($k['revenue']), 'ca'],
@@ -160,7 +160,7 @@ new class extends Component
                         </div>
                         <div>
                             <div class="text-[28px] font-extrabold tracking-tight text-ink-900">{{ $fr($k['actifs']) }}</div>
-                            <div class="text-[12px] text-ink-500">Parents actifs</div>
+                            <div class="text-[12px] text-ink-500">Parents adoptants</div>
                         </div>
                         <div>
                             <div class="text-[22px] font-bold tracking-tight text-ink-900">{{ $fr($k['nonAdopters']) }}</div>

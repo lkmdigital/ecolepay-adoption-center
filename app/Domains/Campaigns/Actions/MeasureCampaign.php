@@ -218,8 +218,8 @@ final class MeasureCampaign
             ['Contacts ciblés', $contacts],
             ['Connus d\'EcolePay', $matched],
             ['Comptes créés', $withAccount],
-            ['Ont payé', $paid],
-            ['Toujours actifs', $active],
+            ['Premier paiement ⭐', $paid],
+            ['Parents engagés', $active],
         ];
         $out = [];
         $prev = null;

@@ -176,7 +176,7 @@ new class extends Component
 
         return response()->streamDownload(function () use ($rows) {
             $out = fopen('php://output', 'w');
-            fputcsv($out, ['École', 'Code', 'Élèves', 'Parents', 'Inscrits', 'Actifs', 'Adoption %', 'Score santé', 'CA', 'Potentiel']);
+            fputcsv($out, ['École', 'Code', 'Élèves', 'Parents', 'Inscrits', 'Adoptants', 'Adoption %', 'Score santé', 'CA', 'Potentiel']);
             foreach ($rows as $s) {
                 fputcsv($out, [$s['name'], $s['code'], $s['students'], $s['known'], $s['inscrits'], $s['actifs'], $s['rate'], $s['healthScore'], $s['revenue'], $s['potential']]);
             }
@@ -216,7 +216,7 @@ new class extends Component
         return '<svg width="'.$w.'" height="'.$h.'" viewBox="0 0 '.$w.' '.$h.'" fill="none" class="overflow-visible"><polygon points="0,'.$h.' '.$line.' '.$w.','.$h.'" fill="'.$color.'" opacity="0.09"/><polyline points="'.$line.'" fill="none" stroke="'.$color.'" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
     };
 
-    $colLabels = ['code' => 'Code', 'students' => 'Élèves', 'known' => 'Parents', 'inscrits' => 'Inscrits', 'actifs' => 'Actifs', 'revenue' => 'CA', 'potential' => 'Potentiel', 'lastActivity' => 'Dernière activité', 'badge' => 'Statut'];
+    $colLabels = ['code' => 'Code', 'students' => 'Élèves', 'known' => 'Parents', 'inscrits' => 'Inscrits', 'actifs' => 'Adoptants', 'revenue' => 'CA', 'potential' => 'Potentiel', 'lastActivity' => 'Dernière activité', 'badge' => 'Statut'];
     $numericSorts = ['healthScore' => 'Score de santé', 'rate' => 'Adoption', 'known' => 'Parents', 'revenue' => 'Revenus', 'recent' => 'Progression', 'potential' => 'Potentiel'];
     $adoptionLevels = ['' => 'Toutes', 'critique' => 'Critique (< 20 %)', 'faible' => 'Faible (20–40 %)', 'moyen' => 'Moyen (40–70 %)', 'excellent' => 'Excellent (> 70 %)'];
     $modelLevels = ['' => 'Tous modèles', 'parent_paid' => 'Abonnement parent', 'bundled' => 'Abonnement inclus'];
@@ -368,7 +368,7 @@ new class extends Component
                             @if (in_array('students', $cols))<th class="px-3 py-3 text-right">Élèves</th>@endif
                             @if (in_array('known', $cols))<th class="cursor-pointer px-3 py-3 text-right hover:text-ink-800" wire:click="sortByCol('known')">Parents @if($sort==='known')<span class="text-brand-600">{{ $dir==='desc'?'↓':'↑' }}</span>@endif</th>@endif
                             @if (in_array('inscrits', $cols))<th class="px-3 py-3 text-right">Inscrits</th>@endif
-                            @if (in_array('actifs', $cols))<th class="px-3 py-3 text-right">Actifs</th>@endif
+                            @if (in_array('actifs', $cols))<th class="px-3 py-3 text-right">Adoptants</th>@endif
                             <th class="cursor-pointer px-3 py-3 text-right hover:text-ink-800" wire:click="sortByCol('rate')">Adoption @if($sort==='rate')<span class="text-brand-600">{{ $dir==='desc'?'↓':'↑' }}</span>@endif</th>
                             <th class="cursor-pointer px-3 py-3 text-center hover:text-ink-800" wire:click="sortByCol('healthScore')">Santé @if($sort==='healthScore')<span class="text-brand-600">{{ $dir==='desc'?'↓':'↑' }}</span>@endif</th>
                             @if (in_array('revenue', $cols))<th class="cursor-pointer px-3 py-3 text-right hover:text-ink-800" wire:click="sortByCol('revenue')">CA @if($sort==='revenue')<span class="text-brand-600">{{ $dir==='desc'?'↓':'↑' }}</span>@endif</th>@endif
@@ -447,7 +447,7 @@ new class extends Component
                             </div>
                             <div class="text-right">
                                 <div class="text-[15px] font-bold text-ink-900">{{ $fr($s['actifs']) }}</div>
-                                <div class="text-[11.5px] text-ink-500">parents actifs</div>
+                                <div class="text-[11.5px] text-ink-500">parents adoptants</div>
                             </div>
                         </div>
                         <div class="mt-4 flex items-center gap-2 rounded-xl px-3 py-2" style="background: {{ $s['health']['bg'] }}">
@@ -549,7 +549,7 @@ new class extends Component
 
                     <div class="mb-2 text-[11px] font-bold uppercase tracking-wider text-ink-500">Indicateurs</div>
                     <div class="mb-5 grid grid-cols-2 gap-2.5">
-                        @foreach ([['Élèves', $fr($s['students'])], ['Parents connus', $fr($s['known'])], ['Comptes créés', $fr($s['inscrits'])], ['Parents actifs', $fr($s['actifs'])], ["Taux d'adoption", number_format($s['rate'], 1, ',', ' ').' %'], ['Revenus', $s['revenue'] > 0 ? $money($s['revenue']) : '—']] as [$l, $v])
+                        @foreach ([['Élèves', $fr($s['students'])], ['Parents connus', $fr($s['known'])], ['Comptes créés', $fr($s['inscrits'])], ['Parents adoptants', $fr($s['actifs'])], ["Taux d'adoption", number_format($s['rate'], 1, ',', ' ').' %'], ['Revenus', $s['revenue'] > 0 ? $money($s['revenue']) : '—']] as [$l, $v])
                             <div class="rounded-xl border border-ink-150 bg-ink-50 px-3 py-2.5">
                                 <div class="text-[17px] font-bold text-ink-900">{{ $v }}</div>
                                 <div class="text-[11px] text-ink-500">{{ $l }}</div>

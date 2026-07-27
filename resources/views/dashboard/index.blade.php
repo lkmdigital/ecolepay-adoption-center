@@ -437,7 +437,7 @@ new class extends Component
                         <span class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-brand-50 text-[12px] font-bold text-brand-700">{{ $i + 1 }}</span>
                         <div class="min-w-0">
                             <div class="truncate text-[14px] font-semibold text-ink-900">{{ $o['name'] }}</div>
-                            <div class="text-[12px] text-ink-500">{{ $fr($o['nonAdopters']) }} parents non actifs · adoption {{ number_format($o['rate'], 1, ',', ' ') }} %</div>
+                            <div class="text-[12px] text-ink-500">{{ $fr($o['nonAdopters']) }} parents non adoptants · adoption {{ number_format($o['rate'], 1, ',', ' ') }} %</div>
                         </div>
                     </div>
                     <div class="flex-1">
