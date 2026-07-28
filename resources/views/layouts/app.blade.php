@@ -10,6 +10,7 @@
     $modules = [
         'dashboard' => ['Dashboard', 'dashboard.index', 'Dashboard exécutif', "Vue d'ensemble de l'adoption d'EcolePay"],
         'schools' => ['Écoles', 'schools.index', 'Écoles', "Suivi de l'adoption par établissement"],
+        'geography' => ['Carte', 'geography.index', 'Carte de répartition', "Répartition géographique de l'adoption"],
         'parents' => ['Parents', 'parents.index', 'Parents', 'Recherche et parcours des parents'],
         'campaigns' => ['Campagnes', 'campaigns.index', 'Campagnes', 'Import et suivi des campagnes'],
         'analytics' => ['Analytics', 'analytics.index', 'Analytics', 'Analyses et tendances'],
@@ -34,7 +35,7 @@
     $subheader ??= $modules[$active][3];
 
     // Navigation principale : les 8 menus de la maquette.
-    $primary = ['dashboard', 'schools', 'parents', 'campaigns', 'analytics', 'reports', 'assistant', 'settings'];
+    $primary = ['dashboard', 'schools', 'geography', 'parents', 'campaigns', 'analytics', 'reports', 'assistant', 'settings'];
     // Menus d'administration : rendus dans le menu déroulant de l'avatar.
     $adminMenu = ['users', 'activity'];
 
@@ -55,6 +56,7 @@
     $icons = [
         'dashboard' => '<rect x="3" y="3" width="6" height="6" rx="1.5" fill="currentColor"/><rect x="11" y="3" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.45"/><rect x="3" y="11" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.45"/><rect x="11" y="11" width="6" height="6" rx="1.5" fill="currentColor"/>',
         'schools' => '<polygon points="10,2 17,7 3,7" fill="currentColor"/><rect x="4" y="7.5" width="12" height="9.5" rx="1" stroke="currentColor" stroke-width="1.6" fill="none"/><rect x="9" y="12" width="2" height="5" fill="currentColor"/>',
+        'geography' => '<path d="M10 2.5c3 0 5.2 2.2 5.2 5 0 3.5-5.2 10-5.2 10S4.8 11 4.8 7.5c0-2.8 2.2-5 5.2-5z" stroke="currentColor" stroke-width="1.6" fill="none"/><circle cx="10" cy="7.5" r="1.9" fill="currentColor"/>',
         'parents' => '<circle cx="7.2" cy="6.5" r="3" stroke="currentColor" stroke-width="1.6"/><circle cx="14" cy="8" r="2.2" stroke="currentColor" stroke-width="1.6" opacity="0.6"/><path d="M2.5 17c0-3 2.1-5 4.7-5s4.7 2 4.7 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M12.3 17c0-2.2 1.4-3.8 3.2-3.8s3.2 1.6 3.2 3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity="0.6"/>',
         'campaigns' => '<rect x="2.5" y="4" width="15" height="10" rx="3" stroke="currentColor" stroke-width="1.6"/><polygon points="6,14 6,18 10,14" fill="currentColor"/><circle cx="7" cy="9" r="1" fill="currentColor"/><circle cx="10" cy="9" r="1" fill="currentColor"/><circle cx="13" cy="9" r="1" fill="currentColor"/>',
         'analytics' => '<rect x="3" y="11" width="3.5" height="6" rx="1" fill="currentColor" opacity="0.5"/><rect x="8.3" y="6" width="3.5" height="11" rx="1" fill="currentColor"/><rect x="13.6" y="2.5" width="3.5" height="14.5" rx="1" fill="currentColor" opacity="0.75"/>',

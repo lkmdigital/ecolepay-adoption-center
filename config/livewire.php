@@ -36,6 +36,7 @@ return [
         // Un namespace par domaine : <livewire:schools::index />
         'dashboard' => resource_path('views/dashboard'),
         'schools' => resource_path('views/schools'),
+        'geography' => resource_path('views/geography'),
         'parents' => resource_path('views/parents'),
         'campaigns' => resource_path('views/campaigns'),
         'analytics' => resource_path('views/analytics'),
