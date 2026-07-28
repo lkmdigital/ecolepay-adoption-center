@@ -64,6 +64,13 @@ final class Settings
 
         // Maintenance
         'maintenance_mode' => false,
+
+        // Assistant IA (API Claude)
+        'ai_enabled' => true,
+        'ai_api_key' => '',            // saisie par l'utilisateur ; sinon ANTHROPIC_API_KEY
+        'ai_model' => 'claude-opus-5',
+        'ai_effort' => 'low',          // low | medium | high — réactivité du chat
+        'ai_max_tokens' => 2048,
     ];
 
     /** Réglage unitaire, avec repli sur les valeurs par défaut. */

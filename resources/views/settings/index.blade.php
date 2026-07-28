@@ -31,7 +31,13 @@ new class extends Component
         'notif_enabled', 'notif_drop_threshold', 'notif_critical_schools', 'notif_revenue_milestones', 'notif_digest',
         'report_default_period', 'report_footer', 'export_include_test',
         'theme', 'density',
+        'ai_enabled', 'ai_model', 'ai_effort', 'ai_max_tokens',
     ];
+
+    // La clé API est gérée à part (masquée, jamais renvoyée en clair au client).
+    public string $aiKey = '';
+
+    public string $aiTest = '';
 
     public function mount(): void
     {
@@ -57,6 +63,7 @@ new class extends Component
             'form.attribution_window_days' => 'required|integer|min:1|max:365',
             'form.notif_drop_threshold' => 'required|integer|min:1|max:100',
             'form.report_footer' => 'nullable|string|max:120',
+            'form.ai_max_tokens' => 'required|integer|min:256|max:8192',
         ];
     }
 
@@ -74,9 +81,9 @@ new class extends Component
         $casts = [
             'engaged_min_payments', 'school_year_start_month', 'payment_window_end_month',
             'kpi_green_min', 'kpi_orange_min', 'critical_rate_max', 'critical_known_min',
-            'health_target', 'attribution_window_days', 'notif_drop_threshold',
+            'health_target', 'attribution_window_days', 'notif_drop_threshold', 'ai_max_tokens',
         ];
-        $bools = ['notif_enabled', 'notif_critical_schools', 'notif_revenue_milestones', 'export_include_test'];
+        $bools = ['notif_enabled', 'notif_critical_schools', 'notif_revenue_milestones', 'export_include_test', 'ai_enabled'];
 
         $payload = [];
         foreach (self::EDITABLE as $key) {
@@ -92,6 +99,46 @@ new class extends Component
         Settings::save($payload);
 
         $this->flashMessage('Paramètres enregistrés. La marque et les seuils sont appliqués sur toute la plateforme.');
+    }
+
+    // --- Assistant IA : clé API + test de connexion --------------------------
+
+    public function saveApiKey(): void
+    {
+        $key = trim($this->aiKey);
+        if ($key === '') {
+            return;
+        }
+        \App\Domains\Settings\Support\Settings::save(['ai_api_key' => $key]);
+        $this->aiKey = '';
+        $this->flashMessage('Clé API enregistrée.');
+    }
+
+    public function clearApiKey(): void
+    {
+        \App\Domains\Settings\Support\Settings::save(['ai_api_key' => '']);
+        $this->aiKey = '';
+        $this->flashMessage('Clé API supprimée.', 'info');
+    }
+
+    public function testAi(): void
+    {
+        $ask = app(\App\Domains\AI\Actions\AskClaude::class);
+        if (! $ask->isConfigured()) {
+            $this->aiTest = 'error:Aucune clé API configurée.';
+
+            return;
+        }
+        $res = $ask([['role' => 'user', 'content' => 'Réponds simplement « OK » si tu me reçois.']]);
+        $this->aiTest = $res['ok']
+            ? 'ok:Connexion réussie ('.($res['model'] ?? '').').'
+            : 'error:'.match ($res['error'] ?? 'api') {
+                'auth' => 'Clé API invalide ou refusée.',
+                'rate_limit' => 'Limite de requêtes atteinte, réessayez plus tard.',
+                'connection' => 'Impossible de joindre l\'API Claude.',
+                'no_key' => 'Aucune clé API configurée.',
+                default => 'Échec de l\'appel à l\'API Claude.',
+            };
     }
 
     public function resetSection(string $section): void
@@ -144,6 +191,7 @@ new class extends Component
             'notifications' => ['notif_enabled', 'notif_drop_threshold', 'notif_critical_schools', 'notif_revenue_milestones', 'notif_digest'],
             'reports' => ['report_default_period', 'report_footer', 'export_include_test'],
             'appearance' => ['theme', 'density'],
+            'assistant' => ['ai_enabled', 'ai_model', 'ai_effort', 'ai_max_tokens'],
         ];
     }
 
@@ -180,6 +228,7 @@ new class extends Component
         'campaigns' => ['Campagnes', "Canaux et attribution"],
         'notifications' => ['Notifications', "Alertes et seuils de détection"],
         'reports' => ['Rapports & exports', "Période, pied de page, données de test"],
+        'assistant' => ['Assistant IA', "Clé API Claude et modèle"],
         'integrations' => ['Intégrations', "Sources et connecteurs"],
         'security' => ['Sécurité', "Accès et authentification"],
         'appearance' => ['Apparence', "Thème et densité"],
@@ -193,6 +242,7 @@ new class extends Component
         'campaigns' => 'M3 7h10l4-3v12l-4-3H3z',
         'notifications' => 'M6 8a4 4 0 018 0c0 4 1.5 5 1.5 5h-11S6 12 6 8z',
         'reports' => 'M6 3h8v14H6zM8 7h4M8 10h4M8 13h2',
+        'assistant' => 'M5 6h10v7H8l-3 3zM8 9h.01M11 9h.01',
         'integrations' => 'M7 3v4M13 3v4M4 7h12v3a6 6 0 01-12 0z',
         'security' => 'M10 3l6 2v5c0 4-3 6-6 7-3-1-6-3-6-7V5z',
         'appearance' => 'M10 3a7 7 0 100 14 3 3 0 010-6 3 3 0 000-6z',
@@ -409,6 +459,72 @@ new class extends Component
                     </div>
                 </x-settings.card>
                 <x-settings.actions section="reports" />
+
+            {{-- =========================== ASSISTANT IA =========================== --}}
+            @elseif ($s === 'assistant')
+                @php $aiConfigured = app(\App\Domains\AI\Actions\AskClaude::class)->isConfigured(); @endphp
+
+                <x-settings.card title="Clé API Claude" subtitle="Connectez l'Assistant IA à votre compte Anthropic.">
+                    <div class="mb-4 flex items-center gap-2.5 rounded-[12px] border p-3.5 {{ $aiConfigured ? 'border-[#189B57]/30 bg-[#E7F6EE]' : 'border-warning/30 bg-[#FEF9EF]' }}">
+                        <span class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full {{ $aiConfigured ? 'bg-[#189B57] text-white' : 'bg-warning text-white' }}">
+                            <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="{{ $aiConfigured ? 'M4 10l4 4 8-9' : 'M10 4v8M10 15h.01' }}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        </span>
+                        <div class="text-[13px] font-semibold {{ $aiConfigured ? 'text-[#0F7A44]' : 'text-[#8A5A06]' }}">
+                            {{ $aiConfigured ? 'Une clé API est configurée — l’Assistant IA est actif.' : 'Aucune clé API configurée — l’Assistant IA est en attente.' }}
+                        </div>
+                    </div>
+
+                    <x-settings.field label="Clé API Anthropic" hint="Collez votre clé (format sk-ant-…). Elle est stockée côté serveur et n’est jamais réaffichée en clair.">
+                        <input type="password" wire:model="aiKey" class="eac-input" placeholder="{{ $aiConfigured ? '•••••••••••••••• (une clé est enregistrée)' : 'sk-ant-...' }}" autocomplete="off">
+                    </x-settings.field>
+
+                    <div class="mt-3 flex flex-wrap items-center gap-2">
+                        <button wire:click="saveApiKey" class="rounded-[10px] bg-brand-600 px-4 py-2.5 text-[13px] font-semibold text-white hover:bg-brand-700">Enregistrer la clé</button>
+                        <button wire:click="testAi" wire:loading.attr="disabled" wire:target="testAi" class="inline-flex items-center gap-2 rounded-[10px] border border-ink-300 bg-white px-4 py-2.5 text-[13px] font-semibold text-ink-800 hover:bg-ink-100 disabled:opacity-60">
+                            <svg wire:loading wire:target="testAi" width="15" height="15" viewBox="0 0 20 20" fill="none" class="animate-spin"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="2" stroke-opacity="0.3"/><path d="M17 10a7 7 0 00-7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                            Tester la connexion
+                        </button>
+                        @if ($aiConfigured)
+                            <button wire:click="clearApiKey" class="rounded-[10px] px-4 py-2.5 text-[13px] font-semibold text-danger hover:bg-[#FDECEC]">Supprimer la clé</button>
+                        @endif
+                    </div>
+
+                    @if ($aiTest !== '')
+                        @php [$kind, $msg] = explode(':', $aiTest, 2); @endphp
+                        <div class="mt-3 flex items-center gap-2 rounded-[10px] px-3.5 py-2.5 text-[12.5px] font-semibold {{ $kind === 'ok' ? 'bg-[#E7F6EE] text-[#0F7A44]' : 'bg-[#FDECEC] text-danger' }}">
+                            <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><path d="{{ $kind === 'ok' ? 'M4 10l4 4 8-9' : 'M6 6l8 8M14 6l-8 8' }}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            {{ $msg }}
+                        </div>
+                    @endif
+
+                    <x-settings.note>La clé peut aussi être définie via la variable d’environnement <span class="font-mono">ANTHROPIC_API_KEY</span> ; la clé saisie ici prime. Aucun secret n’est affiché après enregistrement.</x-settings.note>
+                </x-settings.card>
+
+                <x-settings.card title="Comportement de l'assistant" subtitle="Modèle et réactivité des réponses.">
+                    <x-settings.toggle model="form.ai_enabled" label="Activer l'Assistant IA" desc="Rend le module Assistant IA accessible et interrogeable." />
+                    <div class="mt-4 grid gap-5 sm:grid-cols-2">
+                        <x-settings.field label="Modèle Claude" hint="Opus = le plus fin ; Sonnet = rapide et économique ; Haiku = le plus rapide.">
+                            <select wire:model="form.ai_model" class="eac-input">
+                                <option value="claude-opus-5">Claude Opus 5 (le plus capable)</option>
+                                <option value="claude-sonnet-5">Claude Sonnet 5 (rapide, économique)</option>
+                                <option value="claude-haiku-4-5">Claude Haiku 4.5 (le plus rapide)</option>
+                            </select>
+                        </x-settings.field>
+                        <x-settings.field label="Effort de raisonnement" hint="Plus l'effort est élevé, plus la réponse est fouillée — mais plus lente.">
+                            <select wire:model="form.ai_effort" class="eac-input">
+                                <option value="low">Faible (réponses rapides)</option>
+                                <option value="medium">Moyen</option>
+                                <option value="high">Élevé (analyses poussées)</option>
+                            </select>
+                        </x-settings.field>
+                        <x-settings.field label="Longueur maximale (tokens)" hint="Plafond de longueur d'une réponse.">
+                            <input type="number" min="256" max="8192" wire:model="form.ai_max_tokens" class="eac-input">
+                        </x-settings.field>
+                    </div>
+                    <x-settings.note>Les réponses sont ancrées sur un instantané des vraies données EcolePay (KPI, écoles, campagnes) injecté dans le contexte : l'assistant ne doit pas inventer de chiffres. Le coût des requêtes est facturé sur votre compte Anthropic.</x-settings.note>
+                </x-settings.card>
+
+                <x-settings.actions section="assistant" />
 
             {{-- =========================== INTÉGRATIONS =========================== --}}
             @elseif ($s === 'integrations')

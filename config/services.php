@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    // Assistant IA — la clé peut aussi être saisie dans Paramètres › Assistant IA
+    // (le réglage prime sur cette variable d'environnement).
+    'anthropic' => [
+        'key' => env('ANTHROPIC_API_KEY', ''),
+    ],
+
 ];

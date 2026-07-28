@@ -1,3 +1,6 @@
 <?php
 
-// Routes du domaine ai.
+use Illuminate\Support\Facades\Route;
+
+// Routes du domaine ai (Assistant IA).
+Route::livewire('/assistant', 'ai::index')->name('assistant.index');
