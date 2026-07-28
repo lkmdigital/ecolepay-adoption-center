@@ -107,4 +107,31 @@ class AiAssistantTest extends TestCase
 
         $this->assertSame('sk-ant-from-ui', Settings::get('ai_api_key'));
     }
+
+    #[Test]
+    public function the_floating_widget_renders(): void
+    {
+        Livewire::actingAs(CurrentUser::resolve())->test('ai::widget')->assertOk();
+    }
+
+    #[Test]
+    public function the_widget_tags_its_conversation_and_passes_page_context(): void
+    {
+        Settings::save(['ai_api_key' => 'sk-ant-xyz']);
+        Http::fake(['api.anthropic.com/*' => Http::response([
+            'model' => 'claude-opus-5', 'stop_reason' => 'end_turn',
+            'content' => [['type' => 'text', 'text' => 'Réponse contextuelle.']],
+        ], 200)]);
+
+        Livewire::actingAs(CurrentUser::resolve())
+            ->test('ai::widget')
+            ->set('pageLabel', 'Écoles')
+            ->call('ask', 'Que montre cette page ?');
+
+        // La conversation est marquée « widget », distincte du plein écran.
+        $this->assertSame(1, AiConversation::where('source', 'widget')->count());
+
+        // Le contexte de page est injecté dans le prompt système envoyé à Claude.
+        Http::assertSent(fn ($request) => str_contains($request['system'], 'Écoles'));
+    }
 }

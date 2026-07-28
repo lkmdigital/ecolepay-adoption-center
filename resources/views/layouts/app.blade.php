@@ -53,6 +53,18 @@
     $mayAccess = fn ($key) => ! isset($canOf[$key]) || (bool) $user?->can($canOf[$key]);
     $initials = \Illuminate\Support\Str::of($userName)->explode(' ')->map(fn ($p) => \Illuminate\Support\Str::substr($p, 0, 1))->take(2)->implode('');
 
+    // Notifications réelles (alertes actives détectées par la plateforme).
+    $notifItems = collect();
+    $notifCount = 0;
+    if (\Illuminate\Support\Facades\Schema::hasTable('eac_notifications')) {
+        $notifItems = \App\Domains\Notifications\Models\Notification::query()
+            ->where('status', '!=', 'resolved')
+            ->orderByRaw("CASE priority WHEN 'critique' THEN 1 WHEN 'haute' THEN 2 WHEN 'moyenne' THEN 3 WHEN 'faible' THEN 4 ELSE 5 END")
+            ->orderByDesc('detected_at')->take(6)->get();
+        $notifCount = (int) \App\Domains\Notifications\Models\Notification::where('status', '!=', 'resolved')->count();
+    }
+    $notifPrio = ['critique' => '#DC2626', 'haute' => '#D97706', 'moyenne' => '#2554C7', 'faible' => '#5B6472'];
+
     $icons = [
         'dashboard' => '<rect x="3" y="3" width="6" height="6" rx="1.5" fill="currentColor"/><rect x="11" y="3" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.45"/><rect x="3" y="11" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.45"/><rect x="11" y="11" width="6" height="6" rx="1.5" fill="currentColor"/>',
         'schools' => '<polygon points="10,2 17,7 3,7" fill="currentColor"/><rect x="4" y="7.5" width="12" height="9.5" rx="1" stroke="currentColor" stroke-width="1.6" fill="none"/><rect x="9" y="12" width="2" height="5" fill="currentColor"/>',
@@ -175,22 +187,39 @@
                             <svg width="19" height="19" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.6"/><path d="M8 8a2 2 0 113 1.7c-.6.4-1 .8-1 1.6M10 14h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
                         </a>
 
-                        {{-- Notifications --}}
-                        <flux:dropdown position="bottom" align="end">
-                            <button class="relative flex h-9 w-9 items-center justify-center rounded-lg text-ink-700 hover:bg-ink-100" aria-label="Notifications">
+                        {{-- Notifications (dropdown Alpine autonome, badge réel) --}}
+                        <div class="relative" x-data="{ notif: false }">
+                            <button @click="notif = ! notif" class="relative flex h-9 w-9 items-center justify-center rounded-lg text-ink-700 hover:bg-ink-100" aria-label="Notifications">
                                 <svg width="19" height="19" viewBox="0 0 20 20" fill="none"><path d="M5 8a5 5 0 0110 0c0 4 1.5 5 1.5 5h-13S5 12 5 8z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 16a2 2 0 004 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                                @if ($notifCount > 0)
+                                    <span class="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 border-white bg-danger px-1 text-[10px] font-bold text-white">{{ $notifCount > 9 ? '9+' : $notifCount }}</span>
+                                @endif
                             </button>
-                            <div class="w-80 p-1">
-                                <div class="flex items-center justify-between px-3 py-2">
-                                    <span class="text-[13px] font-bold text-ink-900">Notifications</span>
+                            <div x-show="notif" x-cloak @click.outside="notif = false" x-transition
+                                 class="absolute right-0 top-11 z-50 w-[340px] overflow-hidden rounded-[14px] border border-ink-200 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.18)]">
+                                <div class="flex items-center justify-between border-b border-ink-150 px-4 py-3">
+                                    <span class="text-[13.5px] font-bold text-ink-900">Notifications @if ($notifCount > 0)<span class="ml-1 rounded-full bg-danger/10 px-1.5 py-0.5 text-[11px] font-bold text-danger">{{ $notifCount }}</span>@endif</span>
                                     <a href="{{ $linkOf('notifications') }}" class="text-[12px] font-semibold text-brand-600 hover:underline">Tout voir</a>
                                 </div>
-                                <div class="flex flex-col items-center gap-1.5 px-4 py-8 text-center">
-                                    <svg width="26" height="26" viewBox="0 0 20 20" fill="none" class="text-ink-300"><path d="M5 8a5 5 0 0110 0c0 4 1.5 5 1.5 5h-13S5 12 5 8z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
-                                    <span class="text-[12.5px] text-ink-500">Aucune notification pour le moment</span>
+                                <div class="max-h-[360px] overflow-y-auto">
+                                    @forelse ($notifItems as $n)
+                                        <a href="{{ $n->link_route && RouteFacade::has($n->link_route) ? route($n->link_route, $n->link_param ? [$n->link_param] : []) : $linkOf('notifications') }}"
+                                           class="flex items-start gap-2.5 border-b border-ink-100 px-4 py-3 last:border-0 hover:bg-ink-50">
+                                            <span class="mt-1 h-2 w-2 flex-shrink-0 rounded-full" style="background: {{ $notifPrio[$n->priority] ?? '#5B6472' }}"></span>
+                                            <span class="min-w-0">
+                                                <span class="block text-[12.5px] font-semibold leading-snug text-ink-900">{{ $n->title }}</span>
+                                                @if ($n->description)<span class="mt-0.5 block truncate text-[11.5px] text-ink-500">{{ $n->description }}</span>@endif
+                                            </span>
+                                        </a>
+                                    @empty
+                                        <div class="flex flex-col items-center gap-1.5 px-4 py-8 text-center">
+                                            <svg width="26" height="26" viewBox="0 0 20 20" fill="none" class="text-ink-300"><path d="M5 8a5 5 0 0110 0c0 4 1.5 5 1.5 5h-13S5 12 5 8z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+                                            <span class="text-[12.5px] text-ink-500">Aucune notification pour le moment</span>
+                                        </div>
+                                    @endforelse
                                 </div>
                             </div>
-                        </flux:dropdown>
+                        </div>
 
                         {{-- Avatar + menu --}}
                         <flux:dropdown position="bottom" align="end">
@@ -225,6 +254,9 @@
         </div>
 
         <form id="eac-logout" method="POST" action="{{ route('logout') }}" class="hidden">@csrf</form>
+
+        {{-- Bot flottant contextuel, présent sur toutes les pages --}}
+        <livewire:ai::widget />
 
         @fluxScripts
     </body>

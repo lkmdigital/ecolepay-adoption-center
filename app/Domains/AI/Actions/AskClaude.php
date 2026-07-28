@@ -42,7 +42,7 @@ final class AskClaude
     }
 
     /** Prompt système = rôle de l'assistant + garde-fous + données réelles. */
-    public function systemPrompt(): string
+    public function systemPrompt(string $extraContext = ''): string
     {
         // Filet de sécurité : si la couche données échoue, l'assistant répond
         // quand même (sans ancrage) plutôt que de tomber en erreur.
@@ -51,6 +51,9 @@ final class AskClaude
         } catch (\Throwable $e) {
             $context = "DONNÉES RÉELLES ECOLEPAY : instantané momentanément indisponible.";
         }
+
+        // Contexte de page (bot flottant) : oriente la réponse vers l'écran courant.
+        $page = $extraContext !== '' ? "\n\nCONTEXTE : {$extraContext}" : '';
 
         return <<<TXT
         Tu es l'assistant décisionnel d'EcolePay Adoption Center (EAC), la plateforme interne de LKM Digital qui pilote l'adoption de l'application de paiement scolaire EcolePay en Côte d'Ivoire.
@@ -63,15 +66,16 @@ final class AskClaude
         - Formate avec un markdown léger (gras, listes). Pas de tableaux lourds.
         - Termine par une recommandation concrète quand c'est pertinent.
 
-        {$context}
+        {$context}{$page}
         TXT;
     }
 
     /**
      * @param  array<int, array{role: string, content: string}>  $messages
+     * @param  string  $extraContext  Contexte additionnel (ex. page consultée) ajouté au prompt système.
      * @return array{ok: bool, text: string, error?: string, model?: string, usage?: array}
      */
-    public function __invoke(array $messages): array
+    public function __invoke(array $messages, string $extraContext = ''): array
     {
         if (! $this->isConfigured()) {
             return ['ok' => false, 'text' => '', 'error' => 'no_key'];
@@ -85,7 +89,7 @@ final class AskClaude
             ])->timeout(120)->post(self::ENDPOINT, [
                 'model' => $this->model(),
                 'max_tokens' => (int) Settings::get('ai_max_tokens', 2048),
-                'system' => $this->systemPrompt(),
+                'system' => $this->systemPrompt($extraContext),
                 'output_config' => ['effort' => (string) Settings::get('ai_effort', 'low')],
                 'messages' => array_map(fn ($m) => ['role' => $m['role'], 'content' => $m['content']], $messages),
             ]);
