@@ -107,15 +107,17 @@ new class extends Component
     #[Computed]
     public function tabPayments(): array
     {
+        // Historique des paiements RÉUSSIS uniquement (on n'affiche pas les
+        // paiements en attente ou échoués dans la fiche).
         $rows = DB::table('fact_payments as f')
             ->leftJoin('dim_parents as p', 'p.id', '=', 'f.parent_id')
             ->leftJoin('dim_payment_methods as m', 'm.id', '=', 'f.payment_method_id')
-            ->where('f.is_test', false)->where('f.school_id', $this->schoolId)
+            ->where('f.is_test', false)->where('f.school_id', $this->schoolId)->where('f.status', 'success')
             ->orderByDesc('f.paid_at')->limit(60)
-            ->get(['f.id', 'f.paid_at', 'f.amount', 'f.status', 'f.is_manual', 'f.is_first_payment', 'p.full_name', 'm.label_fr as method']);
+            ->get(['f.id', 'f.parent_id', 'f.paid_at', 'f.amount', 'f.is_manual', 'f.is_first_payment', 'p.full_name', 'm.label_fr as method']);
 
-        $agg = DB::table('fact_payments')->where('is_test', false)->where('school_id', $this->schoolId)
-            ->selectRaw("COUNT(*) as total, COALESCE(SUM(CASE WHEN status='success' AND is_manual=0 THEN amount ELSE 0 END),0) as revenue, COALESCE(SUM(CASE WHEN is_manual=1 THEN 1 ELSE 0 END),0) as manual_count")
+        $agg = DB::table('fact_payments')->where('is_test', false)->where('school_id', $this->schoolId)->where('status', 'success')
+            ->selectRaw('COUNT(*) as total, COALESCE(SUM(CASE WHEN is_manual=0 THEN amount ELSE 0 END),0) as revenue, COALESCE(SUM(CASE WHEN is_manual=1 THEN 1 ELSE 0 END),0) as manual_count')
             ->first();
 
         return ['rows' => $rows, 'total' => (int) $agg->total, 'revenue' => (int) $agg->revenue, 'manual' => (int) $agg->manual_count];
@@ -525,8 +527,7 @@ new class extends Component
     </div>
 
     @php
-        $payStatus = ['success' => ['Réussi', '#0F7A44', '#E7F6EE'], 'failed' => ['Échoué', '#B91C1C', '#FDECEC'], 'pending' => ['En attente', '#B45F04', '#FEF3E2']];
-        $channelLabels = ['sms' => 'SMS', 'whatsapp' => 'WhatsApp', 'email' => 'E-mail', 'push' => 'Push', 'social' => 'Réseaux sociaux', 'field' => 'Terrain', 'voice' => 'Appel'];
+        $channelLabels = ['sms' => 'SMS', 'whatsapp' => 'WhatsApp', 'email' => 'E-mail', 'push' => 'Push', 'social' => 'Réseaux sociaux', 'field' => 'Terrain', 'voice' => 'Appel', 'open_house' => 'Portes ouvertes'];
         $campStatus = ['completed' => ['Terminée', '#0F7A44', '#E7F6EE'], 'running' => ['En cours', '#1D3F9C', '#EEF3FE'], 'scheduled' => ['Planifiée', '#B45F04', '#FEF3E2'], 'draft' => ['Brouillon', '#5B6472', '#F2F3F5']];
     @endphp
 
@@ -552,7 +553,16 @@ new class extends Component
                         @foreach ($tp['rows'] as $r)
                             @php $lc = ParentLifecycle::of((bool) $r->account_created_at, (bool) $r->has_ever_paid, $r->successful_payment_count >= 2); @endphp
                             <tr class="hover:bg-ink-50">
-                                <td class="px-5 py-2.5 font-semibold text-ink-900">{{ $r->full_name ?: 'Parent' }}</td>
+                                <td class="px-5 py-2.5">
+                                    @if ($r->id)
+                                        <a href="{{ route('parents.show', $r->id) }}" wire:navigate class="inline-flex items-center gap-1.5 font-semibold text-brand-700 hover:underline">
+                                            {{ $r->full_name ?: 'Parent' }}
+                                            <svg width="12" height="12" viewBox="0 0 20 20" fill="none" class="text-ink-300"><path d="M7 4l6 6-6 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                                        </a>
+                                    @else
+                                        <span class="font-semibold text-ink-900">{{ $r->full_name ?: 'Parent' }}</span>
+                                    @endif
+                                </td>
                                 <td class="px-3 py-2.5 font-mono text-ink-600">{{ $r->phone_e164 ?: '—' }}</td>
                                 <td class="px-3 py-2.5"><span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold" style="background: {{ $lc['bg'] }}; color: {{ $lc['color'] }}">{{ $lc['star'] ? '⭐ ' : '' }}{{ $lc['label'] }}</span></td>
                                 <td class="px-3 py-2.5 text-right font-semibold text-ink-800">{{ $fr($r->successful_payment_count) }}</td>
@@ -572,36 +582,35 @@ new class extends Component
     @php $tpay = $this->tabPayments; @endphp
     <div x-show="tab === 'paiements'" x-cloak class="flex flex-col gap-4">
         <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <div class="rounded-[13px] border border-ink-200 bg-white p-4"><div class="text-[12px] text-ink-500">Paiements enregistrés</div><div class="mt-1 text-[20px] font-bold text-ink-900">{{ $fr($tpay['total']) }}</div></div>
-            <div class="rounded-[13px] border border-ink-200 bg-white p-4"><div class="text-[12px] text-ink-500">Revenu (réussis)</div><div class="mt-1 text-[20px] font-bold text-ink-900">{{ $money($tpay['revenue']) }}</div></div>
+            <div class="rounded-[13px] border border-ink-200 bg-white p-4"><div class="text-[12px] text-ink-500">Paiements réussis</div><div class="mt-1 text-[20px] font-bold text-ink-900">{{ $fr($tpay['total']) }}</div></div>
+            <div class="rounded-[13px] border border-ink-200 bg-white p-4"><div class="text-[12px] text-ink-500">Revenu via l'app</div><div class="mt-1 text-[20px] font-bold text-ink-900">{{ $money($tpay['revenue']) }}</div></div>
             <div class="rounded-[13px] border border-ink-200 bg-white p-4"><div class="text-[12px] text-ink-500">Dont saisis manuellement</div><div class="mt-1 text-[20px] font-bold text-ink-900">{{ $fr($tpay['manual']) }}</div></div>
         </div>
         <div class="rounded-[16px] border border-ink-200 bg-white">
+            <div class="border-b border-ink-150 px-5 py-3 text-[12.5px] font-semibold text-ink-700">Historique des paiements réussis</div>
             @if ($tpay['rows']->isEmpty())
-                <div class="py-14 text-center text-[13px] text-ink-500">Aucun paiement enregistré pour cette école.</div>
+                <div class="py-14 text-center text-[13px] text-ink-500">Aucun paiement réussi enregistré pour cette école.</div>
             @else
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-[12.5px]">
                         <thead class="border-b border-ink-150 text-[11px] font-bold uppercase tracking-wide text-ink-400">
-                            <tr><th class="px-5 py-2.5">Date</th><th class="px-3 py-2.5">Parent</th><th class="px-3 py-2.5 text-right">Montant</th><th class="px-3 py-2.5">Méthode</th><th class="px-3 py-2.5">Type</th><th class="px-5 py-2.5">Statut</th></tr>
+                            <tr><th class="px-5 py-2.5">Date</th><th class="px-3 py-2.5">Parent</th><th class="px-3 py-2.5 text-right">Montant</th><th class="px-3 py-2.5">Méthode</th><th class="px-5 py-2.5">Type</th></tr>
                         </thead>
                         <tbody class="divide-y divide-ink-100">
                             @foreach ($tpay['rows'] as $r)
-                                @php [$slbl, $sfg, $sbg] = $payStatus[$r->status] ?? [$r->status, '#5B6472', '#F2F3F5']; @endphp
                                 <tr class="hover:bg-ink-50">
                                     <td class="px-5 py-2.5 text-ink-700">{{ $dateFr($r->paid_at) }}</td>
-                                    <td class="px-3 py-2.5 text-ink-800">{{ $r->full_name ?: '—' }}</td>
+                                    <td class="px-3 py-2.5">@if ($r->parent_id)<a href="{{ route('parents.show', $r->parent_id) }}" wire:navigate class="font-medium text-brand-700 hover:underline">{{ $r->full_name ?: 'Parent' }}</a>@else <span class="text-ink-800">{{ $r->full_name ?: '—' }}</span>@endif</td>
                                     <td class="px-3 py-2.5 text-right font-semibold text-ink-900">{{ $money($r->amount) }}</td>
                                     <td class="px-3 py-2.5 text-ink-600">{{ $r->method ?: '—' }}@if ($r->is_manual) <span class="ml-1 rounded bg-ink-100 px-1 text-[9.5px] font-bold uppercase text-ink-500">manuel</span>@endif</td>
-                                    <td class="px-3 py-2.5 text-ink-600">{{ $r->is_first_payment ? '1ᵉʳ paiement' : 'Renouvellement' }}</td>
-                                    <td class="px-5 py-2.5"><span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" style="background: {{ $sbg }}; color: {{ $sfg }}">{{ $slbl }}</span></td>
+                                    <td class="px-5 py-2.5 text-ink-600">{{ $r->is_first_payment ? '1ᵉʳ paiement' : 'Renouvellement' }}</td>
                                 </tr>
                             @endforeach
                         </tbody>
                     </table>
                 </div>
                 @if ($tpay['total'] > $tpay['rows']->count())
-                    <div class="border-t border-ink-100 px-5 py-3 text-center text-[12px] text-ink-500">Affichage des {{ $tpay['rows']->count() }} paiements les plus récents sur {{ $fr($tpay['total']) }}.</div>
+                    <div class="border-t border-ink-100 px-5 py-3 text-center text-[12px] text-ink-500">Affichage des {{ $tpay['rows']->count() }} paiements les plus récents sur {{ $fr($tpay['total']) }} réussis.</div>
                 @endif
             @endif
         </div>
