@@ -135,8 +135,8 @@ new class extends Component
             ]);
         } else {
             $msg = match ($res['error'] ?? 'api') {
-                'no_key' => "Aucune clé API n'est configurée. Renseignez votre clé dans Paramètres › Assistant IA.",
-                'auth' => "La clé API a été refusée. Vérifiez-la dans Paramètres › Assistant IA.",
+                'no_key' => "Aucune clé API n'est configurée. Renseignez votre clé dans Paramètres › KATIA.",
+                'auth' => "La clé API a été refusée. Vérifiez-la dans Paramètres › KATIA.",
                 'rate_limit' => "Limite de requêtes atteinte. Patientez quelques instants puis réessayez.",
                 'connection' => "Impossible de joindre l'API Claude. Vérifiez la connexion réseau du serveur.",
                 'refusal' => "Cette demande a été déclinée par les protections de sécurité du modèle.",
@@ -214,9 +214,9 @@ new class extends Component
         <div class="flex flex-col items-center gap-4 rounded-[18px] border border-ink-200 bg-white py-16 text-center shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
             <x-ai.mascot :size="64" />
             <div>
-                <div class="text-[18px] font-bold text-ink-900">Connectez l'Assistant IA</div>
+                <div class="text-[18px] font-bold text-ink-900">Connectez KATIA</div>
                 <p class="mx-auto mt-1.5 max-w-md text-[13px] leading-relaxed text-ink-500">
-                    L'Assistant IA répond à vos questions métier à partir de vos vraies données EcolePay, propulsé par Claude. Renseignez votre clé API Anthropic pour l'activer.
+                    KATIA répond à vos questions métier à partir de vos vraies données EcolePay, propulsé par Claude. Renseignez votre clé API Anthropic pour l'activer.
                 </p>
             </div>
             <a href="{{ route('settings.index', ['section' => 'assistant']) }}" class="inline-flex items-center gap-2 rounded-[10px] bg-brand-600 px-4 py-2.5 text-[13px] font-semibold text-white hover:bg-brand-700">

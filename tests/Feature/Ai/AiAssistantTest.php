@@ -94,7 +94,7 @@ class AiAssistantTest extends TestCase
         Livewire::actingAs(CurrentUser::resolve())
             ->test('ai::index')
             ->assertOk()
-            ->assertSee("Connectez l'Assistant IA", false);
+            ->assertSee('Connectez KATIA');
     }
 
     #[Test]

@@ -23,7 +23,7 @@ final class HelpContent
             ['key' => 'parents', 'label' => 'Parents', 'icon' => 'M7 9a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM3 16c0-2.5 1.8-4 4-4s4 1.5 4 4M13 9.5a2 2 0 100-4M12.5 12c2 0 3.5 1.3 3.5 3.5'],
             ['key' => 'analytics', 'label' => 'Analytics', 'icon' => 'M4 16V4M4 16h12M8 13V9M11 13V6M14 13v-3'],
             ['key' => 'rapports', 'label' => 'Rapports', 'icon' => 'M6 3h8v14H6zM8 7h4M8 10h4M8 13h2'],
-            ['key' => 'assistant', 'label' => 'Assistant IA', 'icon' => 'M5 6h10v7H8l-3 3zM8 9h.01M11 9h.01'],
+            ['key' => 'assistant', 'label' => 'KATIA (Assistant IA)', 'icon' => 'M5 6h10v7H8l-3 3zM8 9h.01M11 9h.01'],
             ['key' => 'parametres', 'label' => 'Paramètres', 'icon' => 'M10 7a3 3 0 100 6 3 3 0 000-6zM10 3v2M10 15v2M3 10h2M15 10h2'],
             ['key' => 'securite', 'label' => 'Sécurité', 'icon' => 'M10 3l6 2v5c0 4-3 6-6 7-3-1-6-3-6-7V5z'],
         ];
@@ -46,7 +46,7 @@ final class HelpContent
                         "Dashboard exécutif : la situation d'ensemble et les priorités du jour.",
                         "Écoles : le pilotage établissement par établissement, avec un score de santé.",
                         "Parents, Campagnes, Analytics, Rapports : l'analyse détaillée.",
-                        "Assistant IA : posez une question métier, obtenez une réponse chiffrée.",
+                        "KATIA (Assistant IA) : posez une question métier, obtenez une réponse chiffrée.",
                     ]],
                     ['note' => "Astuce : épinglez vos écoles et rapports les plus consultés depuis Mon profil › Favoris."],
                 ],

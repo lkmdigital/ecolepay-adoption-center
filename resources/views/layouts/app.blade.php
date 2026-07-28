@@ -15,7 +15,7 @@
         'campaigns' => ['Campagnes', 'campaigns.index', 'Campagnes', 'Import et suivi des campagnes'],
         'analytics' => ['Analytics', 'analytics.index', 'Analytics', 'Analyses et tendances'],
         'reports' => ['Rapports', 'reports.index', 'Rapports', 'Génération et export'],
-        'assistant' => ['Assistant IA', 'assistant.index', 'Assistant IA', 'Copilote décisionnel'],
+        'assistant' => ['KATIA', 'assistant.index', 'KATIA', 'Votre copilote IA · propulsé par Claude'],
         'settings' => ['Paramètres', 'settings.index', 'Paramètres', 'Configuration de la plateforme'],
         // Modules d'administration : accessibles depuis le menu avatar, pas la sidebar.
         'notifications' => ['Notifications', 'notifications.index', 'Notifications & alertes', 'Anomalies et alertes'],

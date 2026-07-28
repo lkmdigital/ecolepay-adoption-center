@@ -127,8 +127,8 @@ new class extends Component
             ]);
         } else {
             $msg = match ($res['error'] ?? 'api') {
-                'no_key' => "Aucune clé API n'est configurée. Renseignez-la dans Paramètres › Assistant IA.",
-                'auth' => "La clé API a été refusée. Vérifiez-la dans Paramètres › Assistant IA.",
+                'no_key' => "Aucune clé API n'est configurée. Renseignez-la dans Paramètres › KATIA.",
+                'auth' => "La clé API a été refusée. Vérifiez-la dans Paramètres › KATIA.",
                 'rate_limit' => 'Limite de requêtes atteinte. Réessayez dans un instant.',
                 'connection' => "Impossible de joindre l'API Claude.",
                 'refusal' => 'Demande déclinée par les protections du modèle.',
@@ -201,7 +201,7 @@ new class extends Component
             <div class="flex items-center gap-2.5 border-b border-ink-150 bg-gradient-to-r from-brand-600 to-[#1D3F9C] px-4 py-3 text-white">
                 <span class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-white/15"><x-ai.mascot :size="26" variant="white" /></span>
                 <div class="min-w-0 flex-1">
-                    <div class="text-[13.5px] font-bold leading-tight">Assistant IA</div>
+                    <div class="text-[13.5px] font-bold leading-tight">KATIA</div>
                     <div class="truncate text-[11px] text-white/75">sur : {{ $this->pageLabel }}</div>
                 </div>
                 @if (! $msgs->isEmpty())
@@ -216,7 +216,7 @@ new class extends Component
                 @if (! $this->configured)
                     <div class="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
                         <x-ai.mascot :size="52" />
-                        <div class="text-[13.5px] font-bold text-ink-900">Assistant IA à connecter</div>
+                        <div class="text-[13.5px] font-bold text-ink-900">KATIA à connecter</div>
                         <p class="text-[12px] leading-relaxed text-ink-500">Renseignez votre clé API Anthropic pour poser des questions sur vos données.</p>
                         <a href="{{ route('settings.index', ['section' => 'assistant']) }}" class="rounded-[9px] bg-brand-600 px-3.5 py-2 text-[12.5px] font-semibold text-white hover:bg-brand-700">Configurer la clé API</a>
                     </div>
@@ -296,7 +296,7 @@ new class extends Component
         </div>
 
         {{-- Bouton flottant --}}
-        <button @click="open = ! open" aria-label="Assistant IA"
+        <button @click="open = ! open" aria-label="KATIA"
                 class="relative flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-[#1D3F9C] shadow-[0_8px_24px_rgba(37,84,199,0.45)] transition-transform hover:scale-105 active:scale-95">
             <span x-show="!open"><x-ai.mascot :size="34" variant="white" /></span>
             <svg x-show="open" x-cloak width="22" height="22" viewBox="0 0 20 20" fill="none" class="text-white"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>

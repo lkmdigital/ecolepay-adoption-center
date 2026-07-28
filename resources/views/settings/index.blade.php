@@ -228,7 +228,7 @@ new class extends Component
         'campaigns' => ['Campagnes', "Canaux et attribution"],
         'notifications' => ['Notifications', "Alertes et seuils de détection"],
         'reports' => ['Rapports & exports', "Période, pied de page, données de test"],
-        'assistant' => ['Assistant IA', "Clé API Claude et modèle"],
+        'assistant' => ['KATIA', "Clé API Claude et modèle"],
         'integrations' => ['Intégrations', "Sources et connecteurs"],
         'security' => ['Sécurité', "Accès et authentification"],
         'appearance' => ['Apparence', "Thème et densité"],
@@ -464,13 +464,13 @@ new class extends Component
             @elseif ($s === 'assistant')
                 @php $aiConfigured = app(\App\Domains\AI\Actions\AskClaude::class)->isConfigured(); @endphp
 
-                <x-settings.card title="Clé API Claude" subtitle="Connectez l'Assistant IA à votre compte Anthropic.">
+                <x-settings.card title="Clé API Claude" subtitle="Connectez KATIA à votre compte Anthropic.">
                     <div class="mb-4 flex items-center gap-2.5 rounded-[12px] border p-3.5 {{ $aiConfigured ? 'border-[#189B57]/30 bg-[#E7F6EE]' : 'border-warning/30 bg-[#FEF9EF]' }}">
                         <span class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full {{ $aiConfigured ? 'bg-[#189B57] text-white' : 'bg-warning text-white' }}">
                             <svg width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="{{ $aiConfigured ? 'M4 10l4 4 8-9' : 'M10 4v8M10 15h.01' }}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         </span>
                         <div class="text-[13px] font-semibold {{ $aiConfigured ? 'text-[#0F7A44]' : 'text-[#8A5A06]' }}">
-                            {{ $aiConfigured ? 'Une clé API est configurée — l’Assistant IA est actif.' : 'Aucune clé API configurée — l’Assistant IA est en attente.' }}
+                            {{ $aiConfigured ? 'Une clé API est configurée — KATIA est en ligne.' : 'Aucune clé API configurée — KATIA est en attente.' }}
                         </div>
                     </div>
 
@@ -501,7 +501,7 @@ new class extends Component
                 </x-settings.card>
 
                 <x-settings.card title="Comportement de l'assistant" subtitle="Modèle et réactivité des réponses.">
-                    <x-settings.toggle model="form.ai_enabled" label="Activer l'Assistant IA" desc="Rend le module Assistant IA accessible et interrogeable." />
+                    <x-settings.toggle model="form.ai_enabled" label="Activer KATIA" desc="Rend KATIA accessible et interrogeable sur toute la plateforme." />
                     <div class="mt-4 grid gap-5 sm:grid-cols-2">
                         <x-settings.field label="Modèle Claude" hint="Opus = le plus fin ; Sonnet = rapide et économique ; Haiku = le plus rapide.">
                             <select wire:model="form.ai_model" class="eac-input">

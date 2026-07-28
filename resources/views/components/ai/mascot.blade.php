@@ -1,30 +1,38 @@
 @props(['size' => 40, 'variant' => 'color'])
 
 @php
-    // variant: 'color' (fond blanc, tête bleutée) ou 'white' (monochrome blanc, sur fond coloré).
-    $body = $variant === 'white' ? '#FFFFFF' : '#FFFFFF';
-    $bodyStroke = $variant === 'white' ? 'rgba(255,255,255,0.9)' : '#CFE0FF';
-    $accent = $variant === 'white' ? '#FFFFFF' : '#7FA8FF';
-    $limb = $variant === 'white' ? 'rgba(255,255,255,0.85)' : '#7FA8FF';
-    $screen = $variant === 'white' ? '#2554C7' : '#12233B';
-    $eyes = $variant === 'white' ? '#BFE0FF' : '#5AC8FA';
+    // Si l'image officielle de KATIA est déposée dans public/images/katia.png,
+    // on l'utilise partout ; sinon on retombe sur une mascotte SVG (cute robot).
+    $hasImage = is_file(public_path('images/katia.png'));
+
+    // variant: 'color' (fond blanc, tête bleutée) ou 'white' (monochrome, sur fond coloré).
+    $body = '#FFFFFF';
+    $bodyStroke = $variant === 'white' ? 'rgba(255,255,255,0.85)' : '#D5E3FF';
+    $ear = $variant === 'white' ? 'rgba(255,255,255,0.9)' : '#7FA8FF';
+    $screen = $variant === 'white' ? '#2554C7' : '#14263C';
+    $eyes = $variant === 'white' ? '#DCEBFF' : '#7FD6FF';
+    $belly = $variant === 'white' ? 'rgba(255,255,255,0.9)' : '#7FA8FF';
+    $glow = $variant === 'white' ? '#2554C7' : '#BFE6FF';
 @endphp
 
-<svg width="{{ $size }}" height="{{ $size }}" viewBox="0 0 48 48" fill="none" {{ $attributes }}>
-    {{-- Antenne --}}
-    <line x1="24" y1="5.5" x2="24" y2="11" stroke="{{ $limb }}" stroke-width="2" stroke-linecap="round"/>
-    <circle cx="24" cy="4" r="2.4" fill="{{ $accent }}"/>
-    {{-- Bras --}}
-    <rect x="3.5" y="20" width="6" height="12" rx="3" fill="{{ $limb }}"/>
-    <rect x="38.5" y="20" width="6" height="12" rx="3" fill="{{ $limb }}"/>
-    {{-- Tête / corps --}}
-    <rect x="9" y="11" width="30" height="27" rx="10" fill="{{ $body }}" stroke="{{ $bodyStroke }}" stroke-width="1.5"/>
-    {{-- Écran --}}
-    <rect x="14" y="16.5" width="20" height="15" rx="6.5" fill="{{ $screen }}"/>
-    {{-- Yeux souriants ^_^ --}}
-    <path d="M18 26 q2.4 -3.4 4.8 0" stroke="{{ $eyes }}" stroke-width="2" stroke-linecap="round" fill="none"/>
-    <path d="M25.2 26 q2.4 -3.4 4.8 0" stroke="{{ $eyes }}" stroke-width="2" stroke-linecap="round" fill="none"/>
-    {{-- Petits pieds --}}
-    <rect x="16" y="38.5" width="6" height="4" rx="2" fill="{{ $limb }}"/>
-    <rect x="26" y="38.5" width="6" height="4" rx="2" fill="{{ $limb }}"/>
-</svg>
+@if ($hasImage)
+    <img src="{{ asset('images/katia.png') }}" alt="KATIA"
+         {{ $attributes->merge(['class' => 'object-contain']) }}
+         style="width: {{ $size }}px; height: {{ $size }}px;">
+@else
+    <svg width="{{ $size }}" height="{{ $size }}" viewBox="0 0 48 48" fill="none" {{ $attributes }}>
+        {{-- Oreilles / bras --}}
+        <ellipse cx="7" cy="22" rx="3.6" ry="6" fill="{{ $ear }}" transform="rotate(-18 7 22)"/>
+        <ellipse cx="41" cy="22" rx="3.6" ry="6" fill="{{ $ear }}" transform="rotate(18 41 22)"/>
+        {{-- Corps bas + ventre lumineux --}}
+        <rect x="15" y="31" width="18" height="12" rx="6" fill="{{ $belly }}"/>
+        <circle cx="24" cy="37" r="3" fill="{{ $glow }}"/>
+        {{-- Tête --}}
+        <rect x="9.5" y="9" width="29" height="25" rx="11" fill="{{ $body }}" stroke="{{ $bodyStroke }}" stroke-width="1.4"/>
+        {{-- Écran --}}
+        <rect x="14" y="14.5" width="20" height="15" rx="7" fill="{{ $screen }}"/>
+        {{-- Yeux souriants ◡ ◡ --}}
+        <path d="M18.4 21 q2.3 3.2 4.6 0" stroke="{{ $eyes }}" stroke-width="2.1" stroke-linecap="round" fill="none"/>
+        <path d="M24.9 21 q2.3 3.2 4.6 0" stroke="{{ $eyes }}" stroke-width="2.1" stroke-linecap="round" fill="none"/>
+    </svg>
+@endif
