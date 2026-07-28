@@ -21,6 +21,7 @@
         'users' => ['Utilisateurs', 'users.index', 'Utilisateurs & rôles', 'Gestion des accès'],
         'activity' => ["Journal d'activité", 'activity.index', "Journal d'activité", 'Audit des actions'],
         'profile' => ['Mon profil', 'profile.index', 'Mon profil', 'Gérez vos informations, préférences et sécurité'],
+        'help' => ["Centre d'aide", 'help.index', "Centre d'aide", 'Documentation, guides et assistance'],
     ];
 
     // Module actif déduit du nom de la route courante (dashboard.index → dashboard).
@@ -160,6 +161,11 @@
                             <input placeholder="Rechercher…" class="w-full border-none bg-transparent text-[13.5px] text-ink-900 outline-none placeholder:text-ink-500">
                         </div>
 
+                        {{-- Centre d'aide --}}
+                        <a href="{{ $linkOf('help') }}" class="flex h-9 w-9 items-center justify-center rounded-lg text-ink-700 hover:bg-ink-100" title="Centre d'aide" aria-label="Centre d'aide">
+                            <svg width="19" height="19" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.6"/><path d="M8 8a2 2 0 113 1.7c-.6.4-1 .8-1 1.6M10 14h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                        </a>
+
                         {{-- Notifications --}}
                         <flux:dropdown position="bottom" align="end">
                             <button class="relative flex h-9 w-9 items-center justify-center rounded-lg text-ink-700 hover:bg-ink-100" aria-label="Notifications">
@@ -193,6 +199,7 @@
                                     <flux:menu.item icon="{{ $key === 'users' ? 'users' : 'clock' }}" href="{{ $linkOf($key) }}">{{ $modules[$key][2] }}</flux:menu.item>
                                 @endforeach
                                 <flux:menu.item icon="cog-6-tooth" href="{{ $linkOf('settings') }}">Paramètres</flux:menu.item>
+                                <flux:menu.item icon="question-mark-circle" href="{{ $linkOf('help') }}">Centre d'aide</flux:menu.item>
                                 <flux:menu.separator />
                                 <flux:menu.item icon="arrow-right-start-on-rectangle" variant="danger" href="#">Déconnexion</flux:menu.item>
                             </flux:menu>
