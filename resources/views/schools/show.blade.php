@@ -1,8 +1,13 @@
 <?php
 
+use App\Domains\Campaigns\Models\Campaign;
+use App\Domains\Parents\Support\ParentLifecycle;
+use App\Domains\Reports\Models\Report;
 use App\Domains\Schools\Actions\ComputeSchoolProfile;
 use App\Domains\Schools\Models\School;
 use App\Domains\Schools\Support\IvorianGazetteer;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 
@@ -80,6 +85,65 @@ new class extends Component
             }
             fclose($out);
         }, 'fiche-'.$p['school']['code'].'-'.now()->format('Y-m-d').'.csv');
+    }
+
+    // --- Données des onglets (scopées à l'école) -------------------------------
+
+    #[Computed]
+    public function tabParents(): array
+    {
+        $rows = DB::table('fact_parent_journeys as j')
+            ->leftJoin('dim_parents as p', 'p.id', '=', 'j.parent_id')
+            ->where('j.is_test', false)->where('j.school_id', $this->schoolId)
+            ->orderByDesc('j.has_ever_paid')->orderByDesc('j.successful_payment_count')->orderBy('p.full_name')
+            ->limit(60)
+            ->get(['p.id', 'p.full_name', 'p.phone_e164', 'p.account_created_at', 'j.has_ever_paid', 'j.successful_payment_count', 'j.first_payment_at']);
+
+        $total = (int) DB::table('fact_parent_journeys')->where('is_test', false)->where('school_id', $this->schoolId)->distinct()->count('parent_id');
+
+        return ['rows' => $rows, 'total' => $total];
+    }
+
+    #[Computed]
+    public function tabPayments(): array
+    {
+        $rows = DB::table('fact_payments as f')
+            ->leftJoin('dim_parents as p', 'p.id', '=', 'f.parent_id')
+            ->leftJoin('dim_payment_methods as m', 'm.id', '=', 'f.payment_method_id')
+            ->where('f.is_test', false)->where('f.school_id', $this->schoolId)
+            ->orderByDesc('f.paid_at')->limit(60)
+            ->get(['f.id', 'f.paid_at', 'f.amount', 'f.status', 'f.is_manual', 'f.is_first_payment', 'p.full_name', 'm.label_fr as method']);
+
+        $agg = DB::table('fact_payments')->where('is_test', false)->where('school_id', $this->schoolId)
+            ->selectRaw("COUNT(*) as total, COALESCE(SUM(CASE WHEN status='success' AND is_manual=0 THEN amount ELSE 0 END),0) as revenue, COALESCE(SUM(CASE WHEN is_manual=1 THEN 1 ELSE 0 END),0) as manual_count")
+            ->first();
+
+        return ['rows' => $rows, 'total' => (int) $agg->total, 'revenue' => (int) $agg->revenue, 'manual' => (int) $agg->manual_count];
+    }
+
+    #[Computed]
+    public function tabSubscriptions(): array
+    {
+        // Aucune table d'abonnements dans l'entrepôt : la portion abonnement se
+        // lit via les paiements (fact_payments.subscription_amount).
+        $base = DB::table('fact_payments')->where('is_test', false)->where('is_manual', false)->where('status', 'success')->where('school_id', $this->schoolId);
+        $subRevenue = (int) (clone $base)->sum('subscription_amount');
+        $subscribers = (int) (clone $base)->where('subscription_amount', '>', 0)->distinct()->count('parent_id');
+
+        return ['subRevenue' => $subRevenue, 'subscribers' => $subscribers];
+    }
+
+    #[Computed]
+    public function tabCampaigns(): Collection
+    {
+        return Campaign::query()->where('school_id', $this->schoolId)
+            ->orderByDesc('campaign_date')->orderByDesc('id')->limit(30)->get();
+    }
+
+    #[Computed]
+    public function tabReports(): Collection
+    {
+        return Report::query()->where('school_id', $this->schoolId)->latest('id')->limit(30)->get();
     }
 };
 
@@ -460,20 +524,176 @@ new class extends Component
         </div>
     </div>
 
-    {{-- ══════════ AUTRES ONGLETS (renvois / à venir) ══════════ --}}
-    <div x-show="tab === 'parents'" x-cloak class="flex flex-col items-center gap-3 rounded-[16px] border border-ink-200 bg-white py-14 text-center">
-        <div class="text-[14px] font-semibold text-ink-800">Parents de l'établissement</div>
-        <div class="max-w-md text-[12.5px] text-ink-500">La liste filtrée par école arrive avec le rattachement parent↔école dans l'explorateur. En attendant, ouvrez l'explorateur global des parents.</div>
-        <a href="{{ route('parents.index') }}" wire:navigate class="mt-1 inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-brand-700">Ouvrir les parents</a>
+    @php
+        $payStatus = ['success' => ['Réussi', '#0F7A44', '#E7F6EE'], 'failed' => ['Échoué', '#B91C1C', '#FDECEC'], 'pending' => ['En attente', '#B45F04', '#FEF3E2']];
+        $channelLabels = ['sms' => 'SMS', 'whatsapp' => 'WhatsApp', 'email' => 'E-mail', 'push' => 'Push', 'social' => 'Réseaux sociaux', 'field' => 'Terrain', 'voice' => 'Appel'];
+        $campStatus = ['completed' => ['Terminée', '#0F7A44', '#E7F6EE'], 'running' => ['En cours', '#1D3F9C', '#EEF3FE'], 'scheduled' => ['Planifiée', '#B45F04', '#FEF3E2'], 'draft' => ['Brouillon', '#5B6472', '#F2F3F5']];
+    @endphp
+
+    {{-- ══════════ PARENTS ══════════ --}}
+    @php $tp = $this->tabParents; @endphp
+    <div x-show="tab === 'parents'" x-cloak class="rounded-[16px] border border-ink-200 bg-white">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-ink-150 px-5 py-4">
+            <div>
+                <div class="text-[14px] font-bold text-ink-900">Parents de l'établissement</div>
+                <div class="text-[12px] text-ink-500">{{ $fr($tp['total']) }} parent(s) rattaché(s) à cette école.</div>
+            </div>
+            <a href="{{ route('parents.index', ['school' => $sc['id']]) }}" wire:navigate class="rounded-lg bg-brand-600 px-3.5 py-2 text-[12.5px] font-semibold text-white hover:bg-brand-700">Ouvrir dans l'explorateur</a>
+        </div>
+        @if ($tp['rows']->isEmpty())
+            <div class="py-14 text-center text-[13px] text-ink-500">Aucun parent rattaché pour le moment.</div>
+        @else
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-[12.5px]">
+                    <thead class="border-b border-ink-150 text-[11px] font-bold uppercase tracking-wide text-ink-400">
+                        <tr><th class="px-5 py-2.5">Parent</th><th class="px-3 py-2.5">Téléphone</th><th class="px-3 py-2.5">Statut</th><th class="px-3 py-2.5 text-right">Paiements</th><th class="px-5 py-2.5">Compte</th></tr>
+                    </thead>
+                    <tbody class="divide-y divide-ink-100">
+                        @foreach ($tp['rows'] as $r)
+                            @php $lc = ParentLifecycle::of((bool) $r->account_created_at, (bool) $r->has_ever_paid, $r->successful_payment_count >= 2); @endphp
+                            <tr class="hover:bg-ink-50">
+                                <td class="px-5 py-2.5 font-semibold text-ink-900">{{ $r->full_name ?: 'Parent' }}</td>
+                                <td class="px-3 py-2.5 font-mono text-ink-600">{{ $r->phone_e164 ?: '—' }}</td>
+                                <td class="px-3 py-2.5"><span class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold" style="background: {{ $lc['bg'] }}; color: {{ $lc['color'] }}">{{ $lc['star'] ? '⭐ ' : '' }}{{ $lc['label'] }}</span></td>
+                                <td class="px-3 py-2.5 text-right font-semibold text-ink-800">{{ $fr($r->successful_payment_count) }}</td>
+                                <td class="px-5 py-2.5 text-ink-500">{{ $r->account_created_at ? 'Inscrit' : 'Non inscrit' }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+            @if ($tp['total'] > $tp['rows']->count())
+                <div class="border-t border-ink-100 px-5 py-3 text-center text-[12px] text-ink-500">Affichage des {{ $tp['rows']->count() }} premiers · <a href="{{ route('parents.index', ['school' => $sc['id']]) }}" wire:navigate class="font-semibold text-brand-600 hover:underline">voir les {{ $fr($tp['total']) }} parents</a></div>
+            @endif
+        @endif
     </div>
 
-    @foreach (['paiements' => 'Paiements', 'abonnements' => 'Abonnements', 'campagnes' => 'Campagnes', 'rapports' => 'Rapports'] as $tk => $tl)
-        <div x-show="tab === '{{ $tk }}'" x-cloak class="flex flex-col items-center gap-2 rounded-[16px] border border-dashed border-ink-300 bg-white py-14 text-center">
-            <svg width="28" height="28" viewBox="0 0 20 20" fill="none" class="text-ink-300"><rect x="3" y="3" width="14" height="14" rx="3" stroke="currentColor" stroke-width="1.4"/></svg>
-            <div class="text-[14px] font-semibold text-ink-800">{{ $tl }}</div>
-            <div class="text-[12.5px] text-ink-500">Onglet « {{ $tl }} » — à venir avec son module dédié.</div>
+    {{-- ══════════ PAIEMENTS ══════════ --}}
+    @php $tpay = $this->tabPayments; @endphp
+    <div x-show="tab === 'paiements'" x-cloak class="flex flex-col gap-4">
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div class="rounded-[13px] border border-ink-200 bg-white p-4"><div class="text-[12px] text-ink-500">Paiements enregistrés</div><div class="mt-1 text-[20px] font-bold text-ink-900">{{ $fr($tpay['total']) }}</div></div>
+            <div class="rounded-[13px] border border-ink-200 bg-white p-4"><div class="text-[12px] text-ink-500">Revenu (réussis)</div><div class="mt-1 text-[20px] font-bold text-ink-900">{{ $money($tpay['revenue']) }}</div></div>
+            <div class="rounded-[13px] border border-ink-200 bg-white p-4"><div class="text-[12px] text-ink-500">Dont saisis manuellement</div><div class="mt-1 text-[20px] font-bold text-ink-900">{{ $fr($tpay['manual']) }}</div></div>
         </div>
-    @endforeach
+        <div class="rounded-[16px] border border-ink-200 bg-white">
+            @if ($tpay['rows']->isEmpty())
+                <div class="py-14 text-center text-[13px] text-ink-500">Aucun paiement enregistré pour cette école.</div>
+            @else
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-[12.5px]">
+                        <thead class="border-b border-ink-150 text-[11px] font-bold uppercase tracking-wide text-ink-400">
+                            <tr><th class="px-5 py-2.5">Date</th><th class="px-3 py-2.5">Parent</th><th class="px-3 py-2.5 text-right">Montant</th><th class="px-3 py-2.5">Méthode</th><th class="px-3 py-2.5">Type</th><th class="px-5 py-2.5">Statut</th></tr>
+                        </thead>
+                        <tbody class="divide-y divide-ink-100">
+                            @foreach ($tpay['rows'] as $r)
+                                @php [$slbl, $sfg, $sbg] = $payStatus[$r->status] ?? [$r->status, '#5B6472', '#F2F3F5']; @endphp
+                                <tr class="hover:bg-ink-50">
+                                    <td class="px-5 py-2.5 text-ink-700">{{ $dateFr($r->paid_at) }}</td>
+                                    <td class="px-3 py-2.5 text-ink-800">{{ $r->full_name ?: '—' }}</td>
+                                    <td class="px-3 py-2.5 text-right font-semibold text-ink-900">{{ $money($r->amount) }}</td>
+                                    <td class="px-3 py-2.5 text-ink-600">{{ $r->method ?: '—' }}@if ($r->is_manual) <span class="ml-1 rounded bg-ink-100 px-1 text-[9.5px] font-bold uppercase text-ink-500">manuel</span>@endif</td>
+                                    <td class="px-3 py-2.5 text-ink-600">{{ $r->is_first_payment ? '1ᵉʳ paiement' : 'Renouvellement' }}</td>
+                                    <td class="px-5 py-2.5"><span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" style="background: {{ $sbg }}; color: {{ $sfg }}">{{ $slbl }}</span></td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+                @if ($tpay['total'] > $tpay['rows']->count())
+                    <div class="border-t border-ink-100 px-5 py-3 text-center text-[12px] text-ink-500">Affichage des {{ $tpay['rows']->count() }} paiements les plus récents sur {{ $fr($tpay['total']) }}.</div>
+                @endif
+            @endif
+        </div>
+    </div>
+
+    {{-- ══════════ ABONNEMENTS ══════════ --}}
+    @php $tsub = $this->tabSubscriptions; $pp = $sc['subscriptionModel'] === 'parent_paid'; @endphp
+    <div x-show="tab === 'abonnements'" x-cloak class="flex flex-col gap-4">
+        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div class="rounded-[13px] border border-ink-200 bg-white p-4"><div class="text-[12px] text-ink-500">Modèle d'abonnement</div><div class="mt-1 text-[15px] font-bold text-ink-900">{{ $pp ? 'Parent payant' : 'Inclus (intégré)' }}</div></div>
+            <div class="rounded-[13px] border border-ink-200 bg-white p-4"><div class="text-[12px] text-ink-500">Montant unitaire</div><div class="mt-1 text-[15px] font-bold text-ink-900">{{ $sc['subscriptionAmount'] > 0 ? $money($sc['subscriptionAmount']) : '—' }}</div></div>
+            <div class="rounded-[13px] border border-ink-200 bg-white p-4"><div class="text-[12px] text-ink-500">Parents abonnés</div><div class="mt-1 text-[20px] font-bold text-ink-900">{{ $pp ? $fr($tsub['subscribers']) : '—' }}</div></div>
+            <div class="rounded-[13px] border border-ink-200 bg-white p-4"><div class="text-[12px] text-ink-500">Revenu abonnement</div><div class="mt-1 text-[20px] font-bold text-ink-900">{{ $tsub['subRevenue'] > 0 ? $money($tsub['subRevenue']) : '—' }}</div></div>
+        </div>
+        <div class="rounded-[16px] border border-ink-200 bg-white p-5">
+            @if ($pp)
+                <p class="text-[13px] leading-relaxed text-ink-700">Dans cette école, <strong>le parent paie l'abonnement</strong> ({{ $money($sc['subscriptionAmount']) }} par abonnement). {{ $fr($tsub['subscribers']) }} parent(s) ont réglé un abonnement via l'app, pour un revenu d'abonnement de {{ $money($tsub['subRevenue']) }}. Le potentiel restant est de {{ $k['potential'] > 0 ? $money($k['potential']) : '0' }}.</p>
+            @else
+                <p class="text-[13px] leading-relaxed text-ink-700">Cette école est en <strong>abonnement intégré</strong> : le parent ne paie pas d'abonnement individuel, il n'y a donc pas de revenu d'abonnement parent à capter ici. L'adoption reste mesurée par les premiers paiements via l'app.</p>
+            @endif
+            <div class="mt-3 flex items-start gap-2 rounded-[11px] bg-ink-50 px-3.5 py-3 text-[12px] text-ink-600">
+                <svg width="15" height="15" viewBox="0 0 20 20" fill="none" class="mt-0.5 flex-shrink-0 text-ink-400"><circle cx="10" cy="10" r="7.5" stroke="currentColor" stroke-width="1.4"/><path d="M10 9v4M10 6.5h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                <span>Les abonnements sont lus via les paiements (portion abonnement). Le détail par abonnement — dates de début/fin, statut — arrivera avec la synchronisation de la table d'abonnements EcolePay.</span>
+            </div>
+        </div>
+    </div>
+
+    {{-- ══════════ CAMPAGNES ══════════ --}}
+    @php $tcamp = $this->tabCampaigns; @endphp
+    <div x-show="tab === 'campagnes'" x-cloak class="rounded-[16px] border border-ink-200 bg-white">
+        <div class="flex items-center justify-between border-b border-ink-150 px-5 py-4">
+            <div class="text-[14px] font-bold text-ink-900">Opérations marketing de l'école</div>
+            <a href="{{ route('campaigns.index') }}" wire:navigate class="rounded-lg border border-ink-200 px-3.5 py-2 text-[12.5px] font-semibold text-ink-800 hover:bg-ink-50">Module Campagnes</a>
+        </div>
+        @if ($tcamp->isEmpty())
+            <div class="flex flex-col items-center gap-2 py-14 text-center">
+                <div class="text-[13.5px] font-semibold text-ink-800">Aucune opération pour cette école</div>
+                <p class="max-w-sm text-[12px] text-ink-500">Importez une opération marketing et mesurez son impact sur l'adoption.</p>
+                <a href="{{ route('campaigns.index') }}" wire:navigate class="mt-1 rounded-lg bg-brand-600 px-4 py-2 text-[12.5px] font-semibold text-white hover:bg-brand-700">Nouvelle opération</a>
+            </div>
+        @else
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-[12.5px]">
+                    <thead class="border-b border-ink-150 text-[11px] font-bold uppercase tracking-wide text-ink-400">
+                        <tr><th class="px-5 py-2.5">Opération</th><th class="px-3 py-2.5">Canal</th><th class="px-3 py-2.5">Date</th><th class="px-3 py-2.5 text-right">Contacts</th><th class="px-5 py-2.5">Statut</th></tr>
+                    </thead>
+                    <tbody class="divide-y divide-ink-100">
+                        @foreach ($tcamp as $c)
+                            @php
+                                $ch = is_object($c->channel) ? ($c->channel->value ?? '') : $c->channel;
+                                [$clbl, $cfg, $cbg] = $campStatus[is_object($c->status) ? $c->status->value : $c->status] ?? [$c->status, '#5B6472', '#F2F3F5'];
+                            @endphp
+                            <tr class="hover:bg-ink-50">
+                                <td class="px-5 py-2.5"><a href="{{ route('campaigns.show', $c->id) }}" wire:navigate class="font-semibold text-brand-700 hover:underline">{{ $c->name }}</a></td>
+                                <td class="px-3 py-2.5 text-ink-600">{{ $channelLabels[$ch] ?? ($ch ?: '—') }}</td>
+                                <td class="px-3 py-2.5 text-ink-600">{{ $dateFr($c->campaign_date) }}</td>
+                                <td class="px-3 py-2.5 text-right text-ink-700">{{ $c->valid_count !== null ? $fr($c->valid_count) : '—' }}</td>
+                                <td class="px-5 py-2.5"><span class="rounded-full px-2 py-0.5 text-[11px] font-semibold" style="background: {{ $cbg }}; color: {{ $cfg }}">{{ $clbl }}</span></td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        @endif
+    </div>
+
+    {{-- ══════════ RAPPORTS ══════════ --}}
+    @php $trep = $this->tabReports; @endphp
+    <div x-show="tab === 'rapports'" x-cloak class="rounded-[16px] border border-ink-200 bg-white">
+        <div class="flex items-center justify-between border-b border-ink-150 px-5 py-4">
+            <div class="text-[14px] font-bold text-ink-900">Rapports de l'école</div>
+            <div class="flex items-center gap-2">
+                <button wire:click="exportReport" class="rounded-lg border border-ink-200 px-3.5 py-2 text-[12.5px] font-semibold text-ink-800 hover:bg-ink-50">Export CSV rapide</button>
+                <a href="{{ route('reports.index') }}" wire:navigate class="rounded-lg bg-brand-600 px-3.5 py-2 text-[12.5px] font-semibold text-white hover:bg-brand-700">Générer un rapport</a>
+            </div>
+        </div>
+        @if ($trep->isEmpty())
+            <div class="flex flex-col items-center gap-2 py-14 text-center">
+                <div class="text-[13.5px] font-semibold text-ink-800">Aucun rapport enregistré pour cette école</div>
+                <p class="max-w-sm text-[12px] text-ink-500">Générez un rapport dédié depuis le module Rapports, ou exportez les indicateurs en CSV.</p>
+            </div>
+        @else
+            <div class="divide-y divide-ink-100">
+                @foreach ($trep as $r)
+                    <a href="{{ route('reports.show', $r->id) }}" wire:navigate class="flex items-center justify-between gap-3 px-5 py-3.5 hover:bg-ink-50">
+                        <div class="min-w-0"><div class="truncate text-[13.5px] font-semibold text-ink-900">{{ $r->name }}</div><div class="text-[11.5px] text-ink-500">{{ ucfirst($r->type ?? 'rapport') }} · {{ $r->period ?: 'période libre' }}</div></div>
+                        <div class="flex-shrink-0 text-[11.5px] text-ink-400">{{ $r->last_generated_at ? $dateFr($r->last_generated_at) : $dateFr($r->created_at) }}</div>
+                    </a>
+                @endforeach
+            </div>
+        @endif
+    </div>
 </div>
 
 @script
