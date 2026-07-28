@@ -26,7 +26,7 @@ use Spatie\Permission\Traits\HasRoles;
  * incompatible avec la permission `audit.view`. Un départ se traduit par une
  * désactivation.
  */
-#[Fillable(['name', 'email', 'password', 'job_title', 'department', 'phone', 'locale', 'timezone'])]
+#[Fillable(['name', 'email', 'password', 'job_title', 'department', 'phone', 'locale', 'timezone', 'preferences'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
@@ -46,7 +46,13 @@ class User extends Authenticatable
             'is_active' => 'boolean',
             'deactivated_at' => 'datetime',
             'last_login_at' => 'datetime',
+            'preferences' => 'array',
         ];
+    }
+
+    public function favorites(): HasMany
+    {
+        return $this->hasMany(\App\Domains\Users\Models\UserFavorite::class);
     }
 
     /**

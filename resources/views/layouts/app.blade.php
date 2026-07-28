@@ -20,6 +20,7 @@
         'notifications' => ['Notifications', 'notifications.index', 'Notifications & alertes', 'Anomalies et alertes'],
         'users' => ['Utilisateurs', 'users.index', 'Utilisateurs & rôles', 'Gestion des accès'],
         'activity' => ["Journal d'activité", 'activity.index', "Journal d'activité", 'Audit des actions'],
+        'profile' => ['Mon profil', 'profile.index', 'Mon profil', 'Gérez vos informations, préférences et sécurité'],
     ];
 
     // Module actif déduit du nom de la route courante (dashboard.index → dashboard).
@@ -38,7 +39,7 @@
 
     $linkOf = fn ($key) => RouteFacade::has($modules[$key][1]) ? route($modules[$key][1]) : '#';
 
-    $user = auth()->user();
+    $user = \App\Domains\Users\Support\CurrentUser::peek();
     $userName = $user?->name ?? 'Utilisateur EAC';
     $userRole = $user?->job_title ?? 'Direction';
     $initials = \Illuminate\Support\Str::of($userName)->explode(' ')->map(fn ($p) => \Illuminate\Support\Str::substr($p, 0, 1))->take(2)->implode('');
@@ -130,7 +131,7 @@
                             </span>
                         </button>
                         <flux:menu>
-                            <flux:menu.item icon="user">Mon profil</flux:menu.item>
+                            <flux:menu.item icon="user" href="{{ $linkOf('profile') }}">Mon profil</flux:menu.item>
                             <flux:menu.separator />
                             <flux:menu.item icon="arrow-right-start-on-rectangle" variant="danger" href="#">Déconnexion</flux:menu.item>
                         </flux:menu>
@@ -187,7 +188,7 @@
                                 <svg width="14" height="14" viewBox="0 0 20 20" fill="none" class="hidden flex-shrink-0 text-ink-500 md:block"><path d="M6 8l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
                             </button>
                             <flux:menu>
-                                <flux:menu.item icon="user">Mon profil</flux:menu.item>
+                                <flux:menu.item icon="user" href="{{ $linkOf('profile') }}">Mon profil</flux:menu.item>
                                 @foreach ($adminMenu as $key)
                                     <flux:menu.item icon="{{ $key === 'users' ? 'users' : 'clock' }}" href="{{ $linkOf($key) }}">{{ $modules[$key][2] }}</flux:menu.item>
                                 @endforeach
