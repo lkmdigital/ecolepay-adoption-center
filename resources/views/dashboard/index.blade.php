@@ -13,10 +13,17 @@ new class extends Component
     #[Url]
     public string $comparison = 'previous';
 
+    // Plage personnalisée (période = 'custom').
+    #[Url]
+    public ?string $from = null;
+
+    #[Url]
+    public ?string $to = null;
+
     #[Computed]
     public function data(): array
     {
-        return app(ComputeExecutiveDashboard::class)($this->period, $this->comparison);
+        return app(ComputeExecutiveDashboard::class)($this->period, $this->comparison, $this->from, $this->to);
     }
 
     public function periods(): array
@@ -28,6 +35,14 @@ new class extends Component
     {
         $this->period = $p;
         unset($this->data);
+    }
+
+    public function applyCustom(): void
+    {
+        if ($this->from && $this->to) {
+            $this->period = 'custom';
+            unset($this->data);
+        }
     }
 
     public function setComparison(string $c): void
@@ -168,17 +183,51 @@ new class extends Component
         <flux:dropdown>
             <button class="inline-flex items-center gap-2 rounded-lg border border-ink-200 bg-white px-3 py-2 text-[13px] font-semibold text-ink-800 hover:bg-ink-50">
                 <svg width="15" height="15" viewBox="0 0 20 20" fill="none" class="text-ink-500"><rect x="3" y="4.5" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M3 8h14M7 3v3M13 3v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-                {{ $this->periods()[$period] ?? 'Période' }}
+                {{ $period === 'custom' ? 'Personnalisé' : ($this->periods()[$period] ?? 'Période') }}
                 <svg width="12" height="12" viewBox="0 0 20 20" fill="none"><path d="M6 8l4 4 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
             <flux:menu>
                 @foreach ($this->periods() as $key => $label)
                     <flux:menu.item wire:click="setPeriod('{{ $key }}')" icon="{{ $period === $key ? 'check' : '' }}">{{ $label }}</flux:menu.item>
                 @endforeach
-                <flux:menu.separator />
-                <flux:menu.item disabled>Personnalisé — à venir</flux:menu.item>
             </flux:menu>
         </flux:dropdown>
+
+        {{-- Période personnalisée (plage de dates) --}}
+        <div class="relative" x-data="{ open: false }">
+            <button @click="open = ! open" @class([
+                'inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-[13px] font-semibold hover:bg-ink-50',
+                'border-brand-300 bg-brand-50 text-brand-700' => $period === 'custom',
+                'border-ink-200 bg-white text-ink-800' => $period !== 'custom',
+            ])>
+                <svg width="15" height="15" viewBox="0 0 20 20" fill="none" class="{{ $period === 'custom' ? 'text-brand-600' : 'text-ink-500' }}"><rect x="3" y="4.5" width="14" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M3 8h14M7 3v3M13 3v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                @if ($period === 'custom' && $from && $to)
+                    {{ \Illuminate\Support\Carbon::parse($from)->format('d/m/y') }} – {{ \Illuminate\Support\Carbon::parse($to)->format('d/m/y') }}
+                @else
+                    Personnalisé
+                @endif
+            </button>
+            <div x-show="open" x-cloak @click.outside="open = false" x-transition
+                 class="absolute left-0 top-11 z-40 w-72 rounded-[13px] border border-ink-200 bg-white p-3.5 shadow-[0_12px_40px_rgba(15,23,42,0.16)]">
+                <div class="mb-2.5 text-[12.5px] font-bold text-ink-800">Plage de dates</div>
+                <div class="grid grid-cols-2 gap-2.5">
+                    <label class="block">
+                        <span class="mb-1 block text-[11.5px] font-semibold text-ink-500">Du</span>
+                        <input type="date" wire:model.live="from" max="{{ now()->format('Y-m-d') }}" class="eac-input">
+                    </label>
+                    <label class="block">
+                        <span class="mb-1 block text-[11.5px] font-semibold text-ink-500">Au</span>
+                        <input type="date" wire:model.live="to" max="{{ now()->format('Y-m-d') }}" class="eac-input">
+                    </label>
+                </div>
+                <button wire:click="applyCustom" @click="open = false"
+                        class="mt-3 w-full rounded-[9px] bg-brand-600 px-3 py-2 text-[12.5px] font-semibold text-white hover:bg-brand-700 disabled:opacity-50"
+                        @disabled(! $from || ! $to)>Appliquer</button>
+                @if (! $from || ! $to)
+                    <p class="mt-1.5 text-center text-[11px] text-ink-400">Choisissez les deux dates.</p>
+                @endif
+            </div>
+        </div>
 
         @php
             $disabledFilters = [
@@ -494,10 +543,19 @@ new class extends Component
                             <span class="flex-shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold" style="background: {{ $rbg }}; color: {{ $rfg }}">{{ $rlabel }}</span>
                         </div>
                         <div class="mt-1.5 text-[12.5px] leading-snug text-ink-600">{{ $r['why'] }}</div>
-                        <button class="mt-2.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-brand-600 hover:underline">
-                            Voir l'analyse
-                            <svg width="13" height="13" viewBox="0 0 20 20" fill="none"><path d="M7 4l6 6-6 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                        </button>
+                        @php
+                            $rRoute = $r['link_route'] ?? null;
+                            $rHref = $rRoute && \Illuminate\Support\Facades\Route::has($rRoute)
+                                ? route($rRoute, ($r['link_param'] ?? null) ? [$r['link_param']] : [])
+                                : null;
+                            $rCta = ($rRoute === 'parents.index') ? 'Voir les parents' : "Voir l'analyse";
+                        @endphp
+                        @if ($rHref)
+                            <a href="{{ $rHref }}" wire:navigate class="mt-2.5 inline-flex items-center gap-1 text-[12.5px] font-semibold text-brand-600 hover:underline">
+                                {{ $rCta }}
+                                <svg width="13" height="13" viewBox="0 0 20 20" fill="none"><path d="M7 4l6 6-6 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            </a>
+                        @endif
                     </div>
                 @endforeach
             </div>

@@ -49,6 +49,7 @@ return [
         'profile' => resource_path('views/profile'),
         'help' => resource_path('views/help'),
         'auth' => resource_path('views/auth'),
+        'search' => resource_path('views/search'),
     ],
 
     /*

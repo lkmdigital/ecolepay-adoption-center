@@ -36,9 +36,9 @@ final class ComputeExecutiveDashboard
         'school_year' => 'Année scolaire',
     ];
 
-    public function __invoke(string $period = 'school_year', string $comparison = 'previous'): array
+    public function __invoke(string $period = 'school_year', string $comparison = 'previous', ?string $from = null, ?string $to = null): array
     {
-        [$start, $end] = $this->resolveRange($period);
+        [$start, $end] = $this->resolveRange($period, $from, $to);
         [$prevStart, $prevEnd] = $this->comparisonRange($start, $end, $comparison);
 
         return [
@@ -59,9 +59,24 @@ final class ComputeExecutiveDashboard
     /* ------------------------------------------------------------- Périodes */
 
     /** @return array{0: Carbon, 1: Carbon} */
-    private function resolveRange(string $period): array
+    private function resolveRange(string $period, ?string $from = null, ?string $to = null): array
     {
         $now = Carbon::now();
+
+        // Plage personnalisée saisie par l'utilisateur.
+        if ($period === 'custom' && $from && $to) {
+            try {
+                $start = Carbon::parse($from)->startOfDay();
+                $end = Carbon::parse($to)->endOfDay();
+                if ($end->lt($start)) {
+                    [$start, $end] = [$end->copy()->startOfDay(), $start->copy()->endOfDay()];
+                }
+
+                return [$start, $end->gt($now) ? $now->copy() : $end];
+            } catch (\Throwable $e) {
+                // Saisie invalide : on retombe sur l'année scolaire.
+            }
+        }
 
         return match ($period) {
             'today' => [$now->copy()->startOfDay(), $now->copy()],
@@ -451,6 +466,7 @@ final class ComputeExecutiveDashboard
                 'priority' => 'critique',
                 'title' => "Lancer une campagne WhatsApp pour {$worst['name']}",
                 'why' => "Adoption à {$this->pct($worst['rate'])} sur {$this->num($worst['known'])} parents connus ; {$this->num($worst['nonAdopters'])} restent à convertir.",
+                'link_route' => 'schools.show', 'link_param' => $worst['id'],
             ];
         }
 
@@ -460,6 +476,7 @@ final class ComputeExecutiveDashboard
                 'priority' => 'elevee',
                 'title' => 'Relancer les parents connus mais non inscrits',
                 'why' => "{$this->num($relance)} numéros figurent sur les listes d'écoles sans compte EcolePay : le plus grand réservoir d'inscription.",
+                'link_route' => 'parents.index', 'link_param' => null,
             ];
         }
 
@@ -469,6 +486,7 @@ final class ComputeExecutiveDashboard
                 'priority' => 'elevee',
                 'title' => 'Convertir les inscrits inactifs en payeurs',
                 'why' => "{$this->num($registeredNotPaid)} parents ont un compte mais n'ont jamais payé : un rappel ciblé peut déclencher le premier paiement.",
+                'link_route' => 'parents.index', 'link_param' => null,
             ];
         }
 
@@ -478,6 +496,7 @@ final class ComputeExecutiveDashboard
                 'priority' => 'moyenne',
                 'title' => "Prioriser {$opp['name']} : fort potentiel de revenu",
                 'why' => "Potentiel d'abonnement estimé à {$this->money($opp['potential'])} si les {$this->num($opp['nonAdopters'])} parents restants adoptent.",
+                'link_route' => 'schools.show', 'link_param' => $opp['id'],
             ];
         }
 

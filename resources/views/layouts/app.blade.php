@@ -176,11 +176,8 @@
                     </div>
 
                     <div class="flex flex-shrink-0 items-center gap-2 md:gap-2.5">
-                        {{-- Recherche globale --}}
-                        <div class="hidden w-52 items-center gap-2 rounded-lg border border-ink-300 bg-ink-50 px-3 py-2 focus-within:border-brand-600 focus-within:bg-white sm:flex lg:w-60">
-                            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" class="flex-shrink-0 text-ink-600"><circle cx="9" cy="9" r="6" stroke="currentColor" stroke-width="1.6"/><path d="M17 17l-3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-                            <input placeholder="Rechercher…" class="w-full border-none bg-transparent text-[13.5px] text-ink-900 outline-none placeholder:text-ink-500">
-                        </div>
+                        {{-- Recherche globale (écoles + parents + campagnes) --}}
+                        <livewire:search::global />
 
                         {{-- Centre d'aide --}}
                         <a href="{{ $linkOf('help') }}" class="flex h-9 w-9 items-center justify-center rounded-lg text-ink-700 hover:bg-ink-100" title="Centre d'aide" aria-label="Centre d'aide">
