@@ -40,9 +40,16 @@
 
     $linkOf = fn ($key) => RouteFacade::has($modules[$key][1]) ? route($modules[$key][1]) : '#';
 
-    $user = \App\Domains\Users\Support\CurrentUser::peek();
+    $user = auth()->user() ?? \App\Domains\Users\Support\CurrentUser::peek();
     $userName = $user?->name ?? 'Utilisateur EAC';
     $userRole = $user?->job_title ?? 'Direction';
+
+    // Menu d'administration filtré selon les permissions du compte connecté.
+    $canOf = [
+        'users' => 'users.view',
+        'activity' => 'audit.view',
+    ];
+    $mayAccess = fn ($key) => ! isset($canOf[$key]) || (bool) $user?->can($canOf[$key]);
     $initials = \Illuminate\Support\Str::of($userName)->explode(' ')->map(fn ($p) => \Illuminate\Support\Str::substr($p, 0, 1))->take(2)->implode('');
 
     $icons = [
@@ -134,7 +141,7 @@
                         <flux:menu>
                             <flux:menu.item icon="user" href="{{ $linkOf('profile') }}">Mon profil</flux:menu.item>
                             <flux:menu.separator />
-                            <flux:menu.item icon="arrow-right-start-on-rectangle" variant="danger" href="#">Déconnexion</flux:menu.item>
+                            <flux:menu.item icon="arrow-right-start-on-rectangle" variant="danger" x-on:click="document.getElementById('eac-logout').submit()">Déconnexion</flux:menu.item>
                         </flux:menu>
                     </flux:dropdown>
                 </div>
@@ -196,12 +203,14 @@
                             <flux:menu>
                                 <flux:menu.item icon="user" href="{{ $linkOf('profile') }}">Mon profil</flux:menu.item>
                                 @foreach ($adminMenu as $key)
-                                    <flux:menu.item icon="{{ $key === 'users' ? 'users' : 'clock' }}" href="{{ $linkOf($key) }}">{{ $modules[$key][2] }}</flux:menu.item>
+                                    @if ($mayAccess($key))
+                                        <flux:menu.item icon="{{ $key === 'users' ? 'users' : 'clock' }}" href="{{ $linkOf($key) }}">{{ $modules[$key][2] }}</flux:menu.item>
+                                    @endif
                                 @endforeach
                                 <flux:menu.item icon="cog-6-tooth" href="{{ $linkOf('settings') }}">Paramètres</flux:menu.item>
                                 <flux:menu.item icon="question-mark-circle" href="{{ $linkOf('help') }}">Centre d'aide</flux:menu.item>
                                 <flux:menu.separator />
-                                <flux:menu.item icon="arrow-right-start-on-rectangle" variant="danger" href="#">Déconnexion</flux:menu.item>
+                                <flux:menu.item icon="arrow-right-start-on-rectangle" variant="danger" x-on:click="document.getElementById('eac-logout').submit()">Déconnexion</flux:menu.item>
                             </flux:menu>
                         </flux:dropdown>
                     </div>
@@ -212,6 +221,8 @@
                 </main>
             </div>
         </div>
+
+        <form id="eac-logout" method="POST" action="{{ route('logout') }}" class="hidden">@csrf</form>
 
         @fluxScripts
     </body>
