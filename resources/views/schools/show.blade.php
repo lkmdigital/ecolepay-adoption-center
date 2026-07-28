@@ -1,6 +1,8 @@
 <?php
 
 use App\Domains\Schools\Actions\ComputeSchoolProfile;
+use App\Domains\Schools\Models\School;
+use App\Domains\Schools\Support\IvorianGazetteer;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 
@@ -8,10 +10,47 @@ new class extends Component
 {
     public int $schoolId;
 
+    // Localisation éditable (ville + commune).
+    public string $geoCity = '';
+
+    public string $geoCommune = '';
+
     public function mount(int $school): void
     {
         $this->schoolId = $school;
         abort_if($this->profile() === null, 404);
+
+        $row = School::find($school);
+        $this->geoCity = $row?->city ?? '';
+        $this->geoCommune = $row?->district ?? '';
+    }
+
+    public function saveLocation(): void
+    {
+        $this->validate([
+            'geoCity' => 'nullable|string|max:80',
+            'geoCommune' => 'nullable|string|max:80',
+        ]);
+
+        $school = School::findOrFail($this->schoolId);
+        $city = trim($this->geoCity);
+        $commune = trim($this->geoCommune);
+
+        // Géocodage via le répertoire ivoirien : la commune est plus précise que
+        // la ville (ex. quartiers d'Abidjan), on l'essaie en premier.
+        $loc = IvorianGazetteer::locate(trim($commune.' '.$city));
+
+        $school->forceFill([
+            'city' => $city ?: null,
+            'district' => $commune ?: null,
+            'region' => $loc['region'] ?? null,
+            'latitude' => $loc['lat'] ?? null,
+            'longitude' => $loc['lng'] ?? null,
+        ])->save();
+
+        unset($this->profile);
+
+        $this->dispatch('school-geo-saved', mapped: (bool) $loc);
     }
 
     #[Computed]
@@ -95,7 +134,9 @@ new class extends Component
     </nav>
 
     {{-- En-tête établissement --}}
-    <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
+    <div class="mb-6 flex flex-wrap items-start justify-between gap-4"
+         x-data="{ editGeo: false, saved: false, mapped: false }"
+         @school-geo-saved.window="editGeo = false; mapped = $event.detail.mapped; saved = true; clearTimeout(window._geo); window._geo = setTimeout(() => saved = false, 4000)">
         <div class="flex items-start gap-4">
             <span class="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-[20px] font-bold text-brand-700">{{ $monogram }}</span>
             <div>
@@ -103,7 +144,30 @@ new class extends Component
                 <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-ink-500">
                     <span class="font-mono">{{ $sc['code'] ?: '—' }}</span>
                     <span>·</span>
-                    <span>{{ $sc['city'] ?: 'Ville —' }}@if ($sc['region']), {{ $sc['region'] }}@else <span class="text-ink-400">(géo à venir)</span>@endif</span>
+                    <span>{{ $sc['city'] ?: 'Ville —' }}@if ($sc['region']), {{ $sc['region'] }}@else <span class="text-ink-400">(géo à renseigner)</span>@endif</span>
+                    <button @click="editGeo = ! editGeo" class="inline-flex items-center gap-1 text-brand-600 hover:text-brand-700" title="Modifier la localisation">
+                        <svg width="13" height="13" viewBox="0 0 20 20" fill="none"><path d="M4 13.5V16h2.5l7-7L11 6.5zM12.5 5l1.2-1.2a1.4 1.4 0 012 2L14.5 7z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg>
+                        <span class="text-[12px] font-semibold">Modifier</span>
+                    </button>
+                    <span x-show="saved" x-cloak x-transition class="inline-flex items-center gap-1 text-[12px] font-semibold text-[#0F7A44]">
+                        <svg width="13" height="13" viewBox="0 0 20 20" fill="none"><path d="M4 10l4 4 8-9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        <span x-text="mapped ? 'Localisation enregistrée · placée sur la carte' : 'Localisation enregistrée · hors répertoire carte'"></span>
+                    </span>
+                </div>
+
+                {{-- Éditeur de localisation --}}
+                <div x-show="editGeo" x-cloak x-transition class="mt-3 flex flex-wrap items-end gap-2.5 rounded-[12px] border border-ink-200 bg-ink-50 p-3">
+                    <label class="block">
+                        <span class="mb-1 block text-[11.5px] font-semibold text-ink-600">Ville</span>
+                        <input type="text" wire:model="geoCity" placeholder="Ex. Abidjan, Bouaké…" class="eac-input w-44 bg-white">
+                    </label>
+                    <label class="block">
+                        <span class="mb-1 block text-[11.5px] font-semibold text-ink-600">Commune / quartier</span>
+                        <input type="text" wire:model="geoCommune" placeholder="Ex. Cocody, Marcory…" class="eac-input w-48 bg-white">
+                    </label>
+                    <button wire:click="saveLocation" wire:loading.attr="disabled" wire:target="saveLocation" class="rounded-[9px] bg-brand-600 px-3.5 py-2 text-[12.5px] font-semibold text-white hover:bg-brand-700 disabled:opacity-60">Enregistrer</button>
+                    <button type="button" @click="editGeo = false" class="rounded-[9px] px-3 py-2 text-[12.5px] font-semibold text-ink-500 hover:bg-ink-100">Annuler</button>
+                    <p class="w-full text-[11px] text-ink-400">La commune (ex. quartiers d'Abidjan) permet un placement plus précis sur la carte de répartition.</p>
                 </div>
                 <div class="mt-2.5 flex flex-wrap items-center gap-2">
                     <span class="inline-flex items-center gap-1 rounded-full bg-success-soft px-2.5 py-0.5 text-[11.5px] font-semibold text-success">

@@ -37,6 +37,21 @@ class GeographyMapTest extends TestCase
     }
 
     #[Test]
+    public function a_manually_entered_city_geocodes_to_real_coordinates(): void
+    {
+        // Saisie manuelle « ville + commune » depuis la fiche école → géocodage.
+        $loc = IvorianGazetteer::locate('Bouaké');
+        $this->assertSame('Gbêkê', $loc['region']);
+        $this->assertEqualsWithDelta(7.69, $loc['lat'], 0.5);
+
+        // Commune d'Abidjan (plus précise) reconnue.
+        $this->assertSame('Abidjan', IvorianGazetteer::locate('Cocody')['region']);
+
+        // Ville hors répertoire : pas de coordonnées (la carte ne la place pas).
+        $this->assertNull(IvorianGazetteer::locate('VilleInconnueXYZ'));
+    }
+
+    #[Test]
     public function abidjan_neighbourhoods_map_to_the_abidjan_district(): void
     {
         foreach (['EEM MARCORY', 'GS BOYANE ABOBO', 'EP ST JOSEPH DES 2 PLATEAUX', 'EPC SAINT AUGUSTIN DE BINGERVILLE'] as $name) {

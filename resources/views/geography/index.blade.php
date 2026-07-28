@@ -33,14 +33,33 @@ new class extends Component
     #[Computed]
     public function located(): Collection
     {
+        // Géo saisie manuellement (fiche école) — fait autorité sur l'inférence.
+        $manual = \Illuminate\Support\Facades\DB::table('dim_schools')
+            ->where('is_current', true)->whereNotNull('latitude')->whereNotNull('longitude')
+            ->get(['id', 'latitude', 'longitude', 'region', 'city'])->keyBy('id');
+
         return collect(app(ListSchoolsForPilotage::class)()['rows'])
-            ->map(function ($s) {
-                $loc = IvorianGazetteer::locate($s['name']);
+            ->map(function ($s) use ($manual) {
+                $m = $manual[$s['id']] ?? null;
+                if ($m) {
+                    $loc = ['lat' => (float) $m->latitude, 'lng' => (float) $m->longitude, 'region' => $m->region ?: 'Non classée', 'city' => $m->city ?: '—', 'source' => 'manuel'];
+                } else {
+                    $loc = IvorianGazetteer::locate($s['name']);
+                    if ($loc) {
+                        $loc['source'] = 'inféré';
+                    }
+                }
 
                 return $loc ? array_merge($s, ['loc' => $loc]) : null;
             })
             ->filter()
             ->values();
+    }
+
+    #[Computed]
+    public function manualCount(): int
+    {
+        return $this->located->filter(fn ($s) => ($s['loc']['source'] ?? '') === 'manuel')->count();
     }
 
     #[Computed]
@@ -152,9 +171,10 @@ new class extends Component
     <div class="mb-5 flex items-start gap-3 rounded-[13px] border border-warning/25 bg-[#FEF9EF] p-4">
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none" class="mt-0.5 flex-shrink-0 text-warning"><path d="M10 3l7 12H3z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 8v3.5M10 13.5h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
         <div>
-            <div class="text-[13.5px] font-bold text-[#8A5A06]">Localisation déduite du nom de l'établissement</div>
+            @php $manual = $this->manualCount; @endphp
+            <div class="text-[13.5px] font-bold text-[#8A5A06]">Localisation : saisie manuelle + déduction du nom</div>
             <p class="mt-1 text-[12.5px] leading-relaxed text-[#8A5A06]/85">
-                Les coordonnées GPS et la région ne sont pas encore synchronisées depuis EcolePay. La carte place chaque école à la <strong>commune/ville reconnue dans son nom</strong> (répertoire de coordonnées réelles ivoiriennes) — c'est une approximation, pas un GPS. {{ $fr($s['located']) }}/{{ $fr($s['total']) }} écoles sont ainsi localisées ; {{ $fr($s['unlocated']) }} restent « localisation inconnue ».
+                {{ $fr($s['located']) }}/{{ $fr($s['total']) }} écoles sont placées sur la carte — dont <strong>{{ $fr($manual) }} saisies manuellement</strong> (ville/commune renseignées dans la fiche école, coordonnées exactes de la localité) et {{ $fr($s['located'] - $manual) }} <strong>déduites du nom</strong> (répertoire ivoirien, approximation). {{ $fr($s['unlocated']) }} restent sans localisation. Renseignez la ville et la commune depuis chaque fiche école pour fiabiliser la carte.
             </p>
         </div>
     </div>
