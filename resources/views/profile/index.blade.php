@@ -5,7 +5,9 @@ use App\Domains\Users\Models\User;
 use App\Domains\Users\Models\UserFavorite;
 use App\Domains\Users\Support\CurrentUser;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
@@ -34,6 +36,12 @@ new class extends Component
     public string $flash = '';
 
     public string $flashKind = 'success';
+
+    /** Changement de mot de passe. */
+    public array $pw = ['current' => '', 'new' => '', 'confirm' => ''];
+
+    /** Confirmation par mot de passe pour la désactivation du compte. */
+    public string $deletePassword = '';
 
     public function mount(): void
     {
@@ -191,14 +199,115 @@ new class extends Component
     {
         $u = $this->user;
         $checks = [
-            ['Mot de passe défini', (bool) $u->password, 'Disponible avec l\'authentification'],
+            ['Mot de passe défini', (bool) $u->password, 'Actif'],
+            ['Sessions surveillées', true, 'Actif'],
             ['Double authentification (2FA)', false, 'Prévue'],
-            ['Questions de récupération', false, 'Prévues'],
         ];
         $done = collect($checks)->filter(fn ($c) => $c[1])->count();
         $score = (int) round($done / count($checks) * 100);
 
         return ['checks' => $checks, 'score' => $score, 'level' => $score >= 66 ? 'Bon' : ($score >= 33 ? 'Moyen' : 'À configurer')];
+    }
+
+    public function changePassword(): void
+    {
+        $this->validate([
+            'pw.current' => 'required',
+            'pw.new' => 'required|string|min:8|confirmed:pw.confirm',
+        ], [], ['pw.current' => 'mot de passe actuel', 'pw.new' => 'nouveau mot de passe']);
+
+        $user = $this->user;
+        if ($user->password && ! Hash::check($this->pw['current'], $user->password)) {
+            $this->addError('pw.current', 'Le mot de passe actuel est incorrect.');
+
+            return;
+        }
+
+        $user->forceFill(['password' => Hash::make($this->pw['new'])])->save();
+        $this->pw = ['current' => '', 'new' => '', 'confirm' => ''];
+        $this->flashMessage('Mot de passe mis à jour.');
+    }
+
+    // --- Sessions actives (table `sessions`, driver base de données) -----------
+
+    #[Computed]
+    public function sessions(): Collection
+    {
+        if (! DB::getSchemaBuilder()->hasTable('sessions')) {
+            return collect();
+        }
+
+        $currentId = session()->getId();
+
+        return DB::table('sessions')->where('user_id', $this->userId)
+            ->orderByDesc('last_activity')->get()
+            ->map(function ($s) use ($currentId) {
+                [$device, $browser] = $this->parseAgent($s->user_agent ?? '');
+
+                return [
+                    'id' => $s->id,
+                    'current' => $s->id === $currentId,
+                    'ip' => $s->ip_address ?: '—',
+                    'device' => $device,
+                    'browser' => $browser,
+                    'last' => $s->last_activity ? \Illuminate\Support\Carbon::createFromTimestamp($s->last_activity) : null,
+                ];
+            });
+    }
+
+    public function revokeSession(string $id): void
+    {
+        if ($id === session()->getId()) {
+            return; // on ne coupe pas la session courante ici
+        }
+        DB::table('sessions')->where('user_id', $this->userId)->where('id', $id)->delete();
+        unset($this->sessions);
+        $this->flashMessage('Session déconnectée.', 'info');
+    }
+
+    public function logoutOthers(): void
+    {
+        DB::table('sessions')->where('user_id', $this->userId)
+            ->where('id', '!=', session()->getId())->delete();
+        unset($this->sessions);
+        $this->flashMessage('Toutes les autres sessions ont été déconnectées.');
+    }
+
+    private function parseAgent(string $ua): array
+    {
+        $os = str_contains($ua, 'Windows') ? 'Windows'
+            : (str_contains($ua, 'iPhone') ? 'iPhone' : (str_contains($ua, 'iPad') ? 'iPad'
+            : (str_contains($ua, 'Android') ? 'Android' : (str_contains($ua, 'Mac OS') ? 'macOS'
+            : (str_contains($ua, 'Linux') ? 'Linux' : 'Appareil')))));
+        $browser = str_contains($ua, 'Edg') ? 'Edge'
+            : (str_contains($ua, 'Chrome') ? 'Chrome' : (str_contains($ua, 'Firefox') ? 'Firefox'
+            : (str_contains($ua, 'Safari') ? 'Safari' : 'Navigateur')));
+
+        return [$os, $browser];
+    }
+
+    // --- Désactivation du compte ----------------------------------------------
+
+    public function deleteAccount()
+    {
+        $this->validate(['deletePassword' => 'required'], [], ['deletePassword' => 'mot de passe']);
+
+        $user = $this->user;
+        if ($user->password && ! Hash::check($this->deletePassword, $user->password)) {
+            $this->addError('deletePassword', 'Mot de passe incorrect.');
+
+            return;
+        }
+
+        // Désactivation (jamais un effacement dur : la paternité des campagnes et
+        // diagnostics doit être préservée pour l'audit). Puis déconnexion.
+        $user->deactivate();
+        DB::table('sessions')->where('user_id', $this->userId)->delete();
+        Auth::logout();
+        session()->invalidate();
+        session()->regenerateToken();
+
+        return $this->redirect(route('login'));
     }
 
     private function flashMessage(string $msg, string $kind = 'success'): void
@@ -345,7 +454,7 @@ new class extends Component
                         </div>
                         <div>
                             <div class="text-[13.5px] font-bold text-ink-900">Niveau de sécurité : <span style="color: {{ $lf }}">{{ $this->security['level'] }}</span></div>
-                            <p class="mt-0.5 text-[12px] text-ink-500">Les protections ci-dessous s'activeront avec l'authentification (module Utilisateurs &amp; rôles).</p>
+                            <p class="mt-0.5 text-[12px] text-ink-500">La double authentification renforcera encore votre compte (bientôt disponible).</p>
                         </div>
                     </div>
 
@@ -358,31 +467,81 @@ new class extends Component
                                     </span>
                                     <span class="text-[13.5px] font-semibold text-ink-800">{{ $name }}</span>
                                 </div>
-                                <span class="rounded-full bg-ink-100 px-2.5 py-1 text-[11px] font-bold text-ink-600">{{ $note }}</span>
+                                <span class="rounded-full {{ $ok ? 'bg-[#E7F6EE] text-[#0F7A44]' : 'bg-ink-100 text-ink-600' }} px-2.5 py-1 text-[11px] font-bold">{{ $note }}</span>
                             </div>
                         @endforeach
                     </div>
+                </x-settings.card>
 
-                    <div class="mt-5 flex flex-wrap items-center gap-3">
-                        <button disabled class="cursor-not-allowed rounded-[10px] border border-ink-300 bg-ink-50 px-4 py-2.5 text-[13px] font-semibold text-ink-400">Modifier le mot de passe</button>
-                        <span class="text-[12px] text-ink-500">Dernier changement : —</span>
+                <x-settings.card title="Changer le mot de passe" subtitle="Choisissez un mot de passe d'au moins 8 caractères.">
+                    <div class="grid gap-5 sm:max-w-md">
+                        <x-settings.field label="Mot de passe actuel">
+                            <input type="password" wire:model="pw.current" autocomplete="current-password" @class(['eac-input', 'border-danger' => $errors->has('pw.current')])>
+                            @error('pw.current') <p class="eac-err">{{ $message }}</p> @enderror
+                        </x-settings.field>
+                        <x-settings.field label="Nouveau mot de passe">
+                            <input type="password" wire:model="pw.new" autocomplete="new-password" @class(['eac-input', 'border-danger' => $errors->has('pw.new')])>
+                            @error('pw.new') <p class="eac-err">{{ $message }}</p> @enderror
+                        </x-settings.field>
+                        <x-settings.field label="Confirmer le nouveau mot de passe">
+                            <input type="password" wire:model="pw.confirm" autocomplete="new-password" class="eac-input">
+                        </x-settings.field>
                     </div>
-                    <x-settings.note>Aucun mécanisme de sécurité factice n'est activé : la connexion, le mot de passe et la 2FA seront réels une fois l'authentification en place.</x-settings.note>
+                    <div class="mt-5 flex justify-end">
+                        <button wire:click="changePassword" wire:loading.attr="disabled" wire:target="changePassword"
+                                class="inline-flex items-center gap-2 rounded-[10px] bg-brand-600 px-4 py-2.5 text-[13px] font-semibold text-white hover:bg-brand-700 disabled:opacity-60">
+                            <svg wire:loading.remove wire:target="changePassword" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M6 9V6.5a4 4 0 018 0V9M5 9h10v7H5z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+                            <svg wire:loading wire:target="changePassword" width="16" height="16" viewBox="0 0 20 20" fill="none" class="animate-spin"><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="2" stroke-opacity="0.3"/><path d="M17 10a7 7 0 00-7-7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                            Mettre à jour
+                        </button>
+                    </div>
+                </x-settings.card>
+
+                <x-settings.card title="Double authentification (2FA)" subtitle="Un second facteur à la connexion.">
+                    <div class="flex items-center justify-between gap-4 rounded-[12px] border border-dashed border-ink-300 p-4">
+                        <div class="text-[13px] text-ink-600">Protégez votre compte avec une application d'authentification (TOTP).</div>
+                        <span class="flex-shrink-0 rounded-full bg-ink-100 px-2.5 py-1 text-[11px] font-bold text-ink-600">Bientôt</span>
+                    </div>
                 </x-settings.card>
 
             {{-- ============================= SESSIONS ============================= --}}
             @elseif ($t === 'sessions')
+                @php $sessions = $this->sessions; $others = $sessions->where('current', false)->count(); @endphp
                 <x-settings.card title="Sessions actives" subtitle="Appareils connectés à votre compte.">
-                    <div class="flex flex-col items-center gap-3 py-12 text-center">
-                        <span class="flex h-14 w-14 items-center justify-center rounded-full bg-ink-100 text-ink-400">
-                            <svg width="26" height="26" viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="14" height="9" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M7 16h6M9 13v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-                        </span>
-                        <div class="text-[14px] font-semibold text-ink-800">Aucune session suivie pour le moment</div>
-                        <p class="max-w-md text-[12.5px] leading-relaxed text-ink-500">
-                            Le suivi des sessions (appareil, navigateur, système, adresse IP, localisation approximative) nécessite l'authentification, pas encore posée sur la plateforme. Cette table se remplira automatiquement dès la mise en place des connexions.
-                        </p>
-                        <button disabled class="mt-1 cursor-not-allowed rounded-[10px] border border-ink-300 bg-ink-50 px-4 py-2 text-[12.5px] font-semibold text-ink-400">Déconnecter toutes les autres sessions</button>
+                    <div class="flex flex-col divide-y divide-ink-100">
+                        @forelse ($sessions as $s)
+                            <div wire:key="sess-{{ $s['id'] }}" class="flex items-center justify-between gap-4 py-3.5">
+                                <div class="flex min-w-0 items-center gap-3">
+                                    <span class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[10px] bg-ink-100 text-ink-600">
+                                        <svg width="18" height="18" viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="14" height="9" rx="1.5" stroke="currentColor" stroke-width="1.5"/><path d="M7 16h6M9 13v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                                    </span>
+                                    <div class="min-w-0">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-[13.5px] font-semibold text-ink-900">{{ $s['device'] }} · {{ $s['browser'] }}</span>
+                                            @if ($s['current'])<span class="rounded-full bg-[#E7F6EE] px-2 py-0.5 text-[10.5px] font-bold text-[#0F7A44]">Session actuelle</span>@endif
+                                        </div>
+                                        <div class="mt-0.5 text-[12px] text-ink-500">
+                                            IP {{ $s['ip'] }}@if ($s['last']) · {{ $s['last']->diffForHumans() }}@endif
+                                        </div>
+                                    </div>
+                                </div>
+                                @unless ($s['current'])
+                                    <button wire:click="revokeSession('{{ $s['id'] }}')" class="flex-shrink-0 rounded-[9px] border border-ink-300 px-3 py-1.5 text-[12px] font-semibold text-ink-700 hover:border-danger hover:bg-[#FDECEC] hover:text-danger">Déconnecter</button>
+                                @endunless
+                            </div>
+                        @empty
+                            <div class="py-10 text-center text-[13px] text-ink-500">Aucune session active enregistrée.</div>
+                        @endforelse
                     </div>
+
+                    @if ($others > 0)
+                        <div class="mt-5 flex items-center justify-between gap-3 rounded-[12px] bg-ink-50 px-4 py-3">
+                            <span class="text-[12.5px] text-ink-600">{{ $others }} autre{{ $others > 1 ? 's' : '' }} session{{ $others > 1 ? 's' : '' }} ouverte{{ $others > 1 ? 's' : '' }}.</span>
+                            <button wire:click="logoutOthers" wire:confirm="Déconnecter toutes les autres sessions ?"
+                                    class="rounded-[9px] bg-brand-600 px-3.5 py-2 text-[12.5px] font-semibold text-white hover:bg-brand-700">Déconnecter les autres</button>
+                        </div>
+                    @endif
+                    <x-settings.note>Le suivi s'appuie sur les sessions serveur (appareil, navigateur, IP, dernière activité). La localisation approximative par IP sera ajoutée ultérieurement.</x-settings.note>
                 </x-settings.card>
 
             {{-- =========================== PRÉFÉRENCES =========================== --}}
@@ -574,16 +733,33 @@ new class extends Component
                     </div>
                 </x-settings.card>
 
-                <x-settings.card title="Suppression du compte" subtitle="Action définitive et encadrée.">
-                    <div class="flex items-start gap-3 rounded-[12px] border border-danger/25 bg-[#FDF2F2] p-4"
-                         x-data="{ confirm: false }">
-                        <svg width="20" height="20" viewBox="0 0 20 20" fill="none" class="mt-0.5 flex-shrink-0 text-danger"><path d="M10 3l7 12H3z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 8v3.5M10 13.5h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-                        <div class="min-w-0 flex-1">
-                            <div class="text-[13.5px] font-bold text-[#8A1C1C]">Demander la suppression de mon compte</div>
-                            <p class="mt-1 text-[12.5px] leading-relaxed text-[#8A1C1C]/85">
-                                Pour préserver la traçabilité (paternité des campagnes et diagnostics), un départ se traduit par une <strong>désactivation</strong>, pas un effacement. La demande sera soumise à un administrateur — disponible avec le module Utilisateurs &amp; rôles.
-                            </p>
-                            <button disabled class="mt-3 cursor-not-allowed rounded-[9px] border border-danger/30 bg-white px-3.5 py-2 text-[12.5px] font-semibold text-danger/60">Demander la suppression</button>
+                <x-settings.card title="Supprimer mon compte" subtitle="Action définitive et encadrée.">
+                    <div class="rounded-[12px] border border-danger/25 bg-[#FDF2F2] p-4" x-data="{ confirm: false }">
+                        <div class="flex items-start gap-3">
+                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" class="mt-0.5 flex-shrink-0 text-danger"><path d="M10 3l7 12H3z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 8v3.5M10 13.5h.01" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                            <div class="min-w-0 flex-1">
+                                <div class="text-[13.5px] font-bold text-[#8A1C1C]">Désactiver et fermer mon compte</div>
+                                <p class="mt-1 text-[12.5px] leading-relaxed text-[#8A1C1C]/85">
+                                    Pour préserver la traçabilité (paternité des campagnes et diagnostics), la fermeture se traduit par une <strong>désactivation</strong>, pas un effacement dur. Vous serez déconnecté immédiatement et ne pourrez plus vous reconnecter ; un administrateur pourra réactiver le compte.
+                                </p>
+
+                                <div x-show="!confirm">
+                                    <button @click="confirm = true" class="mt-3 rounded-[9px] border border-danger/40 bg-white px-3.5 py-2 text-[12.5px] font-semibold text-danger hover:bg-danger hover:text-white">Désactiver mon compte</button>
+                                </div>
+
+                                <div x-show="confirm" x-cloak class="mt-3">
+                                    <label class="mb-1.5 block text-[12px] font-semibold text-[#8A1C1C]">Confirmez avec votre mot de passe</label>
+                                    <div class="flex flex-col gap-2 sm:flex-row sm:items-start">
+                                        <div class="sm:w-64">
+                                            <input type="password" wire:model="deletePassword" autocomplete="current-password" @class(['eac-input', 'border-danger' => $errors->has('deletePassword')])>
+                                            @error('deletePassword') <p class="eac-err">{{ $message }}</p> @enderror
+                                        </div>
+                                        <button wire:click="deleteAccount" wire:loading.attr="disabled" wire:target="deleteAccount"
+                                                class="rounded-[9px] bg-danger px-3.5 py-2 text-[12.5px] font-semibold text-white hover:bg-[#B91C1C] disabled:opacity-60">Confirmer la désactivation</button>
+                                        <button type="button" @click="confirm = false" class="rounded-[9px] px-3 py-2 text-[12.5px] font-semibold text-ink-500 hover:bg-ink-100">Annuler</button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </x-settings.card>

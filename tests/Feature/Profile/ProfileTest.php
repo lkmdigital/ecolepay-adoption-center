@@ -87,4 +87,45 @@ class ProfileTest extends TestCase
 
         $this->assertSame(0, UserFavorite::count());
     }
+
+    #[Test]
+    public function it_changes_the_password_with_the_correct_current_one(): void
+    {
+        $user = User::factory()->create(['password' => \Hash::make('password')]);
+
+        Livewire::actingAs($user)->test('profile::index')
+            ->set('pw.current', 'wrong-one')
+            ->set('pw.new', 'nouveaumdp123')
+            ->set('pw.confirm', 'nouveaumdp123')
+            ->call('changePassword')
+            ->assertHasErrors('pw.current');
+
+        Livewire::actingAs($user)->test('profile::index')
+            ->set('pw.current', 'password')
+            ->set('pw.new', 'nouveaumdp123')
+            ->set('pw.confirm', 'nouveaumdp123')
+            ->call('changePassword')
+            ->assertHasNoErrors();
+
+        $this->assertTrue(\Hash::check('nouveaumdp123', $user->fresh()->password));
+    }
+
+    #[Test]
+    public function deleting_the_account_deactivates_it_after_a_password_check(): void
+    {
+        $user = User::factory()->create(['password' => \Hash::make('password')]);
+        $user->forceFill(['is_active' => true])->save();
+
+        Livewire::actingAs($user)->test('profile::index')
+            ->set('deletePassword', 'wrong')
+            ->call('deleteAccount')
+            ->assertHasErrors('deletePassword');
+        $this->assertTrue($user->fresh()->is_active);
+
+        Livewire::actingAs($user)->test('profile::index')
+            ->set('deletePassword', 'password')
+            ->call('deleteAccount');
+
+        $this->assertFalse($user->fresh()->is_active);
+    }
 }
