@@ -1,5 +1,10 @@
 @php
     use Illuminate\Support\Facades\Route as RouteFacade;
+    use App\Domains\Settings\Support\Settings;
+
+    // Réglages éditables depuis le Centre de configuration (marque de la plateforme).
+    $brandName = Settings::get('platform_name', 'Adoption Center');
+    $brandOrg = Settings::get('platform_org', 'EcolePay');
 
     // Chaque module : libellé, nom de route (si elle existe), titre et sous-titre.
     $modules = [
@@ -84,8 +89,8 @@
                 <div class="flex min-h-[64px] items-center gap-2.5 border-b border-ink-150 px-4">
                     <img src="/images/ecolepay-mark.png" alt="EcolePay" class="h-[30px] w-[30px] flex-shrink-0 object-contain">
                     <div x-show="!collapsed" class="min-w-0 flex-1 overflow-hidden whitespace-nowrap">
-                        <div class="text-[13.5px] font-bold tracking-tight text-ink-900">Adoption Center</div>
-                        <div class="text-[10.5px] font-semibold tracking-wide text-ink-600">ECOLEPAY</div>
+                        <div class="text-[13.5px] font-bold tracking-tight text-ink-900">{{ $brandName }}</div>
+                        <div class="text-[10.5px] font-semibold tracking-wide text-ink-600">{{ \Illuminate\Support\Str::upper($brandOrg) }}</div>
                     </div>
                     <button @click="collapsed = !collapsed; localStorage.setItem('eac.sidebar', collapsed ? '1' : '0')"
                             class="ml-auto hidden h-7 w-7 flex-shrink-0 items-center justify-center rounded-md text-ink-500 hover:bg-ink-100 hover:text-ink-800 md:flex"

@@ -55,3 +55,32 @@
         background: #cfe0ff;
     }
 }
+
+@layer components {
+    /* Champ de formulaire du centre de configuration. */
+    .eac-input {
+        width: 100%;
+        border-radius: 10px;
+        border: 1px solid var(--color-ink-300);
+        background: #fff;
+        padding: 0.5rem 0.75rem;
+        font-size: 13.5px;
+        color: var(--color-ink-900);
+        outline: none;
+        transition:
+            border-color 0.15s,
+            box-shadow 0.15s;
+    }
+
+    .eac-input:focus {
+        border-color: var(--color-brand-600);
+        box-shadow: 0 0 0 3px rgb(37 84 199 / 0.12);
+    }
+
+    .eac-err {
+        margin-top: 0.35rem;
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--color-danger);
+    }
+}
