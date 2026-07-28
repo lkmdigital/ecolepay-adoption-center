@@ -42,6 +42,7 @@ return [
         'ai' => resource_path('views/ai'),
         'reports' => resource_path('views/reports'),
         'notifications' => resource_path('views/notifications'),
+        'activity' => resource_path('views/activity'),
         'users' => resource_path('views/users'),
         'settings' => resource_path('views/settings'),
     ],
