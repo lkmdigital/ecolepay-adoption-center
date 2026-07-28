@@ -1,0 +1,32 @@
+# Contexte de build minimal (les dépendances sont (re)construites dans l'image)
+.git
+.gitattributes
+.github
+.fleet
+.idea
+.vscode
+.phpunit.result.cache
+.phpunit.cache
+
+node_modules
+vendor
+
+# Secrets & config locale — la plateforme fournit les variables d'environnement
+.env
+.env.*
+
+# Assets recompilés par l'étape « assets »
+public/build
+public/hot
+public/storage
+
+# Volatile / dev
+storage/logs
+storage/framework/cache/data
+storage/framework/sessions
+storage/framework/views
+bootstrap/cache/*.php
+database/database.sqlite
+tests
+docs
+*.md
