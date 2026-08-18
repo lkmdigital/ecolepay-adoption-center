@@ -36,13 +36,35 @@ final class ComputeExecutiveDashboard
         'school_year' => 'Année scolaire',
     ];
 
-    public function __invoke(string $period = 'school_year', string $comparison = 'previous', ?string $from = null, ?string $to = null): array
+    /**
+     * Filtres actifs, normalisés (null = pas de filtre). Résolus dans __invoke.
+     *
+     * @var array{school: ?int, region: ?string, schoolType: ?string, campaign: ?int, operator: ?string, stage: ?int, schoolYear: ?string}
+     */
+    private array $f = [
+        'school' => null, 'region' => null, 'schoolType' => null, 'campaign' => null,
+        'operator' => null, 'stage' => null, 'schoolYear' => null,
+    ];
+
+    /** Écoles retenues (école/région/type). null = toutes. @var ?list<int> */
+    private ?array $schoolIds = null;
+
+    /** id dim_payment_methods correspondant à l'opérateur filtré. */
+    private ?int $operatorId = null;
+
+    /**
+     * @param  array<string, mixed>  $filters  school, region, schoolType, campaign, operator, stage, schoolYear
+     */
+    public function __invoke(string $period = 'school_year', string $comparison = 'previous', ?string $from = null, ?string $to = null, array $filters = []): array
     {
+        $this->applyFilters($filters);
+
         [$start, $end] = $this->resolveRange($period, $from, $to);
         [$prevStart, $prevEnd] = $this->comparisonRange($start, $end, $comparison);
 
         return [
             'period' => $period,
+            'activeFilters' => array_filter($this->f, fn ($v) => $v !== null),
             'kpis' => $this->kpis($start, $end, $prevStart, $prevEnd),
             'situation' => $this->situation(),
             'funnel' => $this->funnel(),
@@ -54,6 +76,90 @@ final class ComputeExecutiveDashboard
             'alerts' => $this->alerts(),
             'recommendations' => $this->recommendations(),
         ];
+    }
+
+    /* -------------------------------------------------------------- Filtres */
+
+    /** @param array<string, mixed> $filters */
+    private function applyFilters(array $filters): void
+    {
+        $clean = static fn ($v) => ($v === null || $v === '' || $v === 'all') ? null : $v;
+
+        $this->f = [
+            'school' => ($v = $clean($filters['school'] ?? null)) !== null ? (int) $v : null,
+            'region' => $clean($filters['region'] ?? null),
+            'schoolType' => $clean($filters['schoolType'] ?? null),
+            'campaign' => ($v = $clean($filters['campaign'] ?? null)) !== null ? (int) $v : null,
+            'operator' => $clean($filters['operator'] ?? null),
+            'stage' => ($v = $clean($filters['stage'] ?? null)) !== null ? (int) $v : null,
+            'schoolYear' => $clean($filters['schoolYear'] ?? null),
+        ];
+
+        // Périmètre d'écoles (école > région/type).
+        if ($this->f['school'] !== null) {
+            $this->schoolIds = [$this->f['school']];
+        } elseif ($this->f['region'] !== null || $this->f['schoolType'] !== null) {
+            $q = DB::table('dim_schools')->where('is_test', false)->whereNotNull('is_current');
+            if ($this->f['region'] !== null) {
+                $q->where('region', $this->f['region']);
+            }
+            if ($this->f['schoolType'] !== null) {
+                $q->where('school_type', $this->f['schoolType']);
+            }
+            $this->schoolIds = $q->pluck('id')->map(fn ($id) => (int) $id)->all();
+        }
+
+        if ($this->f['operator'] !== null) {
+            $this->operatorId = DB::table('dim_payment_methods')->where('code', $this->f['operator'])->value('id');
+        }
+    }
+
+    /** Contraint une colonne parent_id au périmètre parents (statut + campagne). */
+    private function applyParentScope($query, string $parentCol): void
+    {
+        if ($this->f['stage'] !== null) {
+            $query->whereExists(fn ($sub) => $sub->from('fact_parent_journeys as js')
+                ->whereColumn('js.parent_id', $parentCol)->where('js.is_test', false)
+                ->where('js.current_stage_id', $this->f['stage']));
+        }
+        if ($this->f['campaign'] !== null) {
+            $query->whereExists(fn ($sub) => $sub->from('fact_campaign_contacts as cc')
+                ->whereColumn('cc.parent_id', $parentCol)->where('cc.campaign_id', $this->f['campaign']));
+        }
+    }
+
+    /** dim_parents en périmètre (école via parcours + statut + campagne). */
+    private function scopedParents()
+    {
+        $q = DB::table('dim_parents')->where('dim_parents.is_test', false);
+
+        if ($this->schoolIds !== null) {
+            $q->whereExists(fn ($sub) => $sub->from('fact_parent_journeys as j')
+                ->whereColumn('j.parent_id', 'dim_parents.id')->where('j.is_test', false)
+                ->whereIn('j.school_id', $this->schoolIds));
+        }
+        $this->applyParentScope($q, 'dim_parents.id');
+
+        return $q;
+    }
+
+    /** fact_parent_journeys en périmètre (école + statut + campagne). */
+    private function scopedJourneys()
+    {
+        $q = DB::table('fact_parent_journeys as j')->where('j.is_test', false);
+
+        if ($this->schoolIds !== null) {
+            $q->whereIn('j.school_id', $this->schoolIds);
+        }
+        if ($this->f['stage'] !== null) {
+            $q->where('j.current_stage_id', $this->f['stage']);
+        }
+        if ($this->f['campaign'] !== null) {
+            $q->whereExists(fn ($sub) => $sub->from('fact_campaign_contacts as cc')
+                ->whereColumn('cc.parent_id', 'j.parent_id')->where('cc.campaign_id', $this->f['campaign']));
+        }
+
+        return $q;
     }
 
     /* ------------------------------------------------------------- Périodes */
@@ -119,11 +225,11 @@ final class ComputeExecutiveDashboard
      */
     private function kpis(Carbon $start, Carbon $end, Carbon $prevStart, Carbon $prevEnd): array
     {
-        $connus = (int) DB::table('dim_parents')->where('is_test', false)->count();
-        $inscrits = (int) DB::table('dim_parents')->where('is_test', false)->whereNotNull('account_created_at')->count();
-        $actifs = (int) DB::table('fact_parent_journeys')->where('is_test', false)->where('has_ever_paid', true)->distinct()->count('parent_id');
-        $ecoles = (int) DB::table('dim_schools')->where('is_test', false)->whereNotNull('is_current')->count();
-        $eleves = (int) DB::table('dim_students')->where('is_test', false)->count();
+        $connus = (int) $this->scopedParents()->count();
+        $inscrits = (int) $this->scopedParents()->whereNotNull('account_created_at')->count();
+        $actifs = (int) $this->scopedJourneys()->where('j.has_ever_paid', true)->distinct()->count('j.parent_id');
+        $ecoles = (int) $this->scopedSchools()->count();
+        $eleves = (int) $this->scopedStudents()->count();
         $revenue = (int) $this->paymentsQuery()->sum('amount');
         $potential = $this->potentialSubscriptionRevenue();
         $adoption = $connus > 0 ? round($actifs / $connus * 100, 1) : 0.0;
@@ -151,13 +257,13 @@ final class ComputeExecutiveDashboard
      */
     private function situation(): array
     {
-        $connus = (int) DB::table('dim_parents')->where('is_test', false)->count();
-        $actifs = (int) DB::table('fact_parent_journeys')->where('is_test', false)->where('has_ever_paid', true)->distinct()->count('parent_id');
+        $connus = (int) $this->scopedParents()->count();
+        $actifs = (int) $this->scopedJourneys()->where('j.has_ever_paid', true)->distinct()->count('j.parent_id');
         $rate = $connus > 0 ? round($actifs / $connus * 100, 1) : 0.0;
 
         // Élan sur 30 jours, exprimé en points d'adoption.
-        $adopters30 = (int) DB::table('fact_parent_journeys')->where('is_test', false)
-            ->where('first_payment_at', '>=', Carbon::now()->subDays(30))->distinct()->count('parent_id');
+        $adopters30 = (int) $this->scopedJourneys()
+            ->where('j.first_payment_at', '>=', Carbon::now()->subDays(30))->distinct()->count('j.parent_id');
         $deltaPts = $connus > 0 ? round($adopters30 / $connus * 100, 1) : 0.0;
 
         return [
@@ -175,9 +281,9 @@ final class ComputeExecutiveDashboard
         if ($connus === 0) {
             return null;
         }
-        $now = (int) DB::table('fact_parent_journeys')->where('is_test', false)->whereNotNull('first_payment_at')->distinct()->count('parent_id');
-        $then = (int) DB::table('fact_parent_journeys')->where('is_test', false)
-            ->whereNotNull('first_payment_at')->where('first_payment_at', '<=', $prevEnd)->distinct()->count('parent_id');
+        $now = (int) $this->scopedJourneys()->whereNotNull('j.first_payment_at')->distinct()->count('j.parent_id');
+        $then = (int) $this->scopedJourneys()
+            ->whereNotNull('j.first_payment_at')->where('j.first_payment_at', '<=', $prevEnd)->distinct()->count('j.parent_id');
 
         $pts = round(($now - $then) / $connus * 100, 1);
         if ($pts == 0.0) {
@@ -189,16 +295,19 @@ final class ComputeExecutiveDashboard
 
     private function deltaByDate(string $table, string $col, Carbon $start, Carbon $end, Carbon $prevStart, Carbon $prevEnd): ?array
     {
-        $current = (int) DB::table($table)->where('is_test', false)->whereBetween($col, [$start, $end])->count();
-        $previous = (int) DB::table($table)->where('is_test', false)->whereBetween($col, [$prevStart, $prevEnd])->count();
+        $base = fn () => $table === 'dim_parents'
+            ? $this->scopedParents()
+            : DB::table($table)->where('is_test', false);
+        $current = (int) $base()->whereBetween($col, [$start, $end])->count();
+        $previous = (int) $base()->whereBetween($col, [$prevStart, $prevEnd])->count();
 
         return $this->delta($current, $previous);
     }
 
     private function deltaAdopters(Carbon $start, Carbon $end, Carbon $prevStart, Carbon $prevEnd): ?array
     {
-        $current = (int) DB::table('fact_parent_journeys')->where('is_test', false)->whereBetween('first_payment_at', [$start, $end])->distinct()->count('parent_id');
-        $previous = (int) DB::table('fact_parent_journeys')->where('is_test', false)->whereBetween('first_payment_at', [$prevStart, $prevEnd])->distinct()->count('parent_id');
+        $current = (int) $this->scopedJourneys()->whereBetween('j.first_payment_at', [$start, $end])->distinct()->count('j.parent_id');
+        $previous = (int) $this->scopedJourneys()->whereBetween('j.first_payment_at', [$prevStart, $prevEnd])->distinct()->count('j.parent_id');
 
         return $this->delta($current, $previous);
     }
@@ -248,7 +357,7 @@ final class ComputeExecutiveDashboard
     private function health(): array
     {
         $keys = $this->monthKeys(12);
-        $connus = max(1, (int) DB::table('dim_parents')->where('is_test', false)->count());
+        $connus = max(1, (int) $this->scopedParents()->count());
 
         $newAdopters = $this->fillMonths($keys, $this->adoptersByMonth());
         $revenue = $this->fillMonths($keys, $this->revenueByMonth());
@@ -291,12 +400,12 @@ final class ComputeExecutiveDashboard
      */
     private function funnel(): array
     {
-        $connus = (int) DB::table('dim_parents')->where('is_test', false)->count();
-        $inscrits = (int) DB::table('dim_parents')->where('is_test', false)->whereNotNull('account_created_at')->count();
-        $adoptants = (int) DB::table('fact_parent_journeys')->where('is_test', false)->where('has_ever_paid', true)->distinct()->count('parent_id');
+        $connus = (int) $this->scopedParents()->count();
+        $inscrits = (int) $this->scopedParents()->whereNotNull('account_created_at')->count();
+        $adoptants = (int) $this->scopedJourneys()->where('j.has_ever_paid', true)->distinct()->count('j.parent_id');
         $engages = (int) DB::query()->fromSub(
-            DB::table('fact_parent_journeys')->where('is_test', false)->where('has_ever_paid', true)
-                ->groupBy('parent_id')->havingRaw('SUM(successful_payment_count) >= 2')->selectRaw('parent_id'),
+            $this->scopedJourneys()->where('j.has_ever_paid', true)
+                ->groupBy('j.parent_id')->havingRaw('SUM(j.successful_payment_count) >= 2')->selectRaw('j.parent_id'),
             'sub'
         )->count();
 
@@ -325,18 +434,24 @@ final class ComputeExecutiveDashboard
      */
     private function repartition(): array
     {
-        $connus = (int) DB::table('dim_parents')->where('is_test', false)->count();
-        $inscrits = (int) DB::table('dim_parents')->where('is_test', false)->whereNotNull('account_created_at')->count();
-        $actifs = (int) DB::table('fact_parent_journeys')->where('is_test', false)->where('has_ever_paid', true)->distinct()->count('parent_id');
-        $inactifs = (int) DB::query()->fromSub(
-            DB::table('dim_parents')
-                ->join('fact_parent_journeys as j', 'j.parent_id', '=', 'dim_parents.id')
-                ->where('dim_parents.is_test', false)->where('j.is_test', false)
-                ->groupBy('dim_parents.id')
-                ->havingRaw('MAX(j.current_stage_id) IN (5, 6)')
-                ->selectRaw('dim_parents.id'),
-            'sub'
-        )->count();
+        $connus = (int) $this->scopedParents()->count();
+        $inscrits = (int) $this->scopedParents()->whereNotNull('account_created_at')->count();
+        $actifs = (int) $this->scopedJourneys()->where('j.has_ever_paid', true)->distinct()->count('j.parent_id');
+
+        $inactifsInner = DB::table('dim_parents')
+            ->join('fact_parent_journeys as j', 'j.parent_id', '=', 'dim_parents.id')
+            ->where('dim_parents.is_test', false)->where('j.is_test', false)
+            ->groupBy('dim_parents.id')
+            ->havingRaw('MAX(j.current_stage_id) IN (5, 6)')
+            ->selectRaw('dim_parents.id');
+        if ($this->schoolIds !== null) {
+            $inactifsInner->whereIn('j.school_id', $this->schoolIds);
+        }
+        if ($this->f['campaign'] !== null) {
+            $inactifsInner->whereExists(fn ($sub) => $sub->from('fact_campaign_contacts as cc')
+                ->whereColumn('cc.parent_id', 'dim_parents.id')->where('cc.campaign_id', $this->f['campaign']));
+        }
+        $inactifs = (int) DB::query()->fromSub($inactifsInner, 'sub')->count();
 
         return [
             ['label' => 'Connus non inscrits', 'value' => max($connus - $inscrits, 0), 'color' => '#94A3B8'],
@@ -351,11 +466,20 @@ final class ComputeExecutiveDashboard
     /** Requête de base : une ligne par école avec ses métriques d'adoption. */
     private function schoolMetrics()
     {
-        return DB::table('dim_schools as s')
+        $q = DB::table('dim_schools as s')
             ->leftJoin('fact_parent_journeys as j', function ($join) {
                 $join->on('j.school_id', '=', 's.id')->where('j.is_test', false);
+                if ($this->f['stage'] !== null) {
+                    $join->where('j.current_stage_id', $this->f['stage']);
+                }
             })
-            ->where('s.is_test', false)->whereNotNull('s.is_current')
+            ->where('s.is_test', false)->whereNotNull('s.is_current');
+
+        if ($this->schoolIds !== null) {
+            $q->whereIn('s.id', $this->schoolIds);
+        }
+
+        return $q
             ->groupBy('s.id', 's.name', 's.subscription_model', 's.subscription_amount')
             ->selectRaw('s.id, s.name, s.subscription_model, s.subscription_amount')
             ->selectRaw('COUNT(DISTINCT j.parent_id) as known')
@@ -437,7 +561,7 @@ final class ComputeExecutiveDashboard
             $alerts[] = ['level' => 'warning', 'priority' => 'Élevée', 'title' => "{$registeredNotPaid} parents inscrits sans premier paiement", 'detail' => "Comptes créés mais jamais convertis : cible directe d'activation."];
         }
 
-        $newAccounts = (int) DB::table('dim_parents')->where('is_test', false)
+        $newAccounts = (int) $this->scopedParents()
             ->where('account_created_at', '>=', $now->copy()->subDays(30))->count();
         if ($newAccounts > 0) {
             $alerts[] = ['level' => 'info', 'priority' => 'Info', 'title' => "{$newAccounts} nouveaux comptes créés (30 derniers jours)", 'detail' => 'Croissance de la base inscrite sur le dernier mois observé.'];
@@ -470,7 +594,7 @@ final class ComputeExecutiveDashboard
             ];
         }
 
-        $relance = (int) DB::table('dim_parents')->where('is_test', false)->whereNull('account_created_at')->count();
+        $relance = (int) $this->scopedParents()->whereNull('account_created_at')->count();
         if ($relance > 0) {
             $recos[] = [
                 'priority' => 'elevee',
@@ -507,21 +631,70 @@ final class ComputeExecutiveDashboard
 
     private function paymentsQuery()
     {
-        return DB::table('fact_payments')->where('is_test', false)->where('is_manual', false)->where('status', 'success');
+        $q = DB::table('fact_payments')
+            ->where('fact_payments.is_test', false)
+            ->where('fact_payments.is_manual', false)
+            ->where('fact_payments.status', 'success');
+
+        if ($this->schoolIds !== null) {
+            $q->whereIn('fact_payments.school_id', $this->schoolIds);
+        }
+        if ($this->f['operator'] !== null) {
+            // Opérateur inconnu (0) => aucun paiement, plutôt que d'ignorer le filtre.
+            $q->where('fact_payments.payment_method_id', $this->operatorId ?? 0);
+        }
+        if ($this->f['schoolYear'] !== null) {
+            $q->where('fact_payments.school_year_label', $this->f['schoolYear']);
+        }
+        $this->applyParentScope($q, 'fact_payments.parent_id');
+
+        return $q;
+    }
+
+    /** dim_schools en périmètre (école/région/type). */
+    private function scopedSchools()
+    {
+        $q = DB::table('dim_schools')->where('is_test', false)->whereNotNull('is_current');
+        if ($this->schoolIds !== null) {
+            $q->whereIn('id', $this->schoolIds);
+        }
+
+        return $q;
+    }
+
+    /** dim_students en périmètre (école + année scolaire). */
+    private function scopedStudents()
+    {
+        $q = DB::table('dim_students')->where('is_test', false);
+        if ($this->schoolIds !== null) {
+            $q->whereIn('school_id', $this->schoolIds);
+        }
+        if ($this->f['schoolYear'] !== null) {
+            $q->where('school_year_label', $this->f['schoolYear']);
+        }
+
+        return $q;
     }
 
     private function potentialSubscriptionRevenue(): int
     {
-        return (int) DB::table('fact_parent_journeys as j')
+        $q = DB::table('fact_parent_journeys as j')
             ->join('dim_schools as s', 's.id', '=', 'j.school_id')
             ->where('j.is_test', false)->where('j.has_ever_paid', false)
-            ->where('s.subscription_model', 'parent_paid')
-            ->sum('s.subscription_amount');
+            ->where('s.subscription_model', 'parent_paid');
+        if ($this->schoolIds !== null) {
+            $q->whereIn('j.school_id', $this->schoolIds);
+        }
+        if ($this->f['stage'] !== null) {
+            $q->where('j.current_stage_id', $this->f['stage']);
+        }
+
+        return (int) $q->sum('s.subscription_amount');
     }
 
     private function registeredNotPaidCount(): int
     {
-        return (int) DB::table('dim_parents')->where('is_test', false)
+        return (int) $this->scopedParents()
             ->whereNotNull('account_created_at')
             ->whereNotExists(fn ($q) => $q->from('fact_parent_journeys as j')
                 ->whereColumn('j.parent_id', 'dim_parents.id')->where('j.has_ever_paid', true)->where('j.is_test', false))
@@ -549,7 +722,11 @@ final class ComputeExecutiveDashboard
 
     private function countByMonth(string $table, string $col)
     {
-        return DB::table($table)->where('is_test', false)->whereNotNull($col)
+        $q = $table === 'dim_parents'
+            ? $this->scopedParents()
+            : DB::table($table)->where('is_test', false);
+
+        return $q->whereNotNull($col)
             ->where($col, '>=', Carbon::now()->startOfMonth()->subMonths(11))
             ->selectRaw("DATE_FORMAT($col, '%Y-%m') as m, COUNT(*) as n")
             ->groupBy('m')->pluck('n', 'm')->map(fn ($v) => (int) $v)->all();
@@ -557,9 +734,9 @@ final class ComputeExecutiveDashboard
 
     private function adoptersByMonth()
     {
-        return DB::table('fact_parent_journeys')->where('is_test', false)->whereNotNull('first_payment_at')
-            ->where('first_payment_at', '>=', Carbon::now()->startOfMonth()->subMonths(11))
-            ->selectRaw("DATE_FORMAT(first_payment_at, '%Y-%m') as m, COUNT(DISTINCT parent_id) as n")
+        return $this->scopedJourneys()->whereNotNull('j.first_payment_at')
+            ->where('j.first_payment_at', '>=', Carbon::now()->startOfMonth()->subMonths(11))
+            ->selectRaw("DATE_FORMAT(j.first_payment_at, '%Y-%m') as m, COUNT(DISTINCT j.parent_id) as n")
             ->groupBy('m')->pluck('n', 'm')->map(fn ($v) => (int) $v)->all();
     }
 
@@ -572,13 +749,20 @@ final class ComputeExecutiveDashboard
 
     private function subRevenueByMonth()
     {
-        return DB::table('fact_parent_journeys as j')
+        $q = DB::table('fact_parent_journeys as j')
             ->join('dim_schools as s', 's.id', '=', 'j.school_id')
             ->where('j.is_test', false)->where('j.has_ever_paid', true)
             ->where('s.subscription_model', 'parent_paid')
             ->whereNotNull('j.first_payment_at')
-            ->where('j.first_payment_at', '>=', Carbon::now()->startOfMonth()->subMonths(11))
-            ->selectRaw("DATE_FORMAT(j.first_payment_at, '%Y-%m') as m, SUM(s.subscription_amount) as v")
+            ->where('j.first_payment_at', '>=', Carbon::now()->startOfMonth()->subMonths(11));
+        if ($this->schoolIds !== null) {
+            $q->whereIn('j.school_id', $this->schoolIds);
+        }
+        if ($this->f['stage'] !== null) {
+            $q->where('j.current_stage_id', $this->f['stage']);
+        }
+
+        return $q->selectRaw("DATE_FORMAT(j.first_payment_at, '%Y-%m') as m, SUM(s.subscription_amount) as v")
             ->groupBy('m')->pluck('v', 'm')->map(fn ($v) => (float) $v)->all();
     }
 

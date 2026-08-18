@@ -20,10 +20,69 @@ new class extends Component
     #[Url]
     public ?string $to = null;
 
+    // Filtres transverses (null = tous). Clés alignées sur ComputeExecutiveDashboard.
+    #[Url]
+    public ?string $school = null;
+
+    #[Url]
+    public ?string $region = null;
+
+    #[Url]
+    public ?string $schoolType = null;
+
+    #[Url]
+    public ?string $campaign = null;
+
+    #[Url]
+    public ?string $operator = null;
+
+    #[Url]
+    public ?string $stage = null;
+
+    #[Url]
+    public ?string $schoolYear = null;
+
+    /** @var list<string> */
+    private array $filterKeys = ['school', 'region', 'schoolType', 'campaign', 'operator', 'stage', 'schoolYear'];
+
     #[Computed]
     public function data(): array
     {
-        return app(ComputeExecutiveDashboard::class)($this->period, $this->comparison, $this->from, $this->to);
+        return app(ComputeExecutiveDashboard::class)(
+            $this->period, $this->comparison, $this->from, $this->to,
+            [
+                'school' => $this->school, 'region' => $this->region, 'schoolType' => $this->schoolType,
+                'campaign' => $this->campaign, 'operator' => $this->operator, 'stage' => $this->stage,
+                'schoolYear' => $this->schoolYear,
+            ],
+        );
+    }
+
+    #[Computed]
+    public function filterOptions(): array
+    {
+        return app(\App\Domains\Dashboard\Actions\DashboardFilterOptions::class)();
+    }
+
+    public function setFilter(string $key, ?string $value): void
+    {
+        if (in_array($key, $this->filterKeys, true)) {
+            $this->{$key} = ($value === '' || $value === 'all') ? null : $value;
+            unset($this->data);
+        }
+    }
+
+    public function resetFilters(): void
+    {
+        foreach ($this->filterKeys as $k) {
+            $this->{$k} = null;
+        }
+        unset($this->data);
+    }
+
+    public function activeFilterCount(): int
+    {
+        return collect($this->filterKeys)->filter(fn ($k) => $this->{$k} !== null && $this->{$k} !== '')->count();
     }
 
     public function periods(): array
@@ -230,19 +289,43 @@ new class extends Component
         </div>
 
         @php
-            $disabledFilters = [
-                ['École', 'La vue exécutive est globale ; le détail par école est dans le module Écoles'],
-                ['Région', 'Géographie des écoles non encore renseignée'],
-                ['Campagne', 'Module Campagnes à venir'],
+            $opts = $this->filterOptions();
+            $filterDefs = [
+                ['school', 'École', 'Toutes les écoles', $opts['schools']],
+                ['region', 'Région', 'Toutes les régions', $opts['regions']],
+                ['schoolType', 'Type', 'Tous les types', $opts['schoolTypes']],
+                ['stage', 'Statut', 'Tous les statuts', $opts['stages']],
+                ['operator', 'Opérateur', 'Tous les opérateurs', $opts['operators']],
+                ['schoolYear', 'Année', 'Toutes les années', $opts['schoolYears']],
+                ['campaign', 'Campagne', 'Toutes les campagnes', $opts['campaigns']],
             ];
         @endphp
-        @foreach ($disabledFilters as [$flabel, $ftip])
-            <button type="button" disabled title="{{ $ftip }}"
-                    class="inline-flex cursor-not-allowed items-center gap-2 rounded-lg border border-dashed border-ink-200 bg-ink-50 px-3 py-2 text-[13px] font-medium text-ink-400">
-                {{ $flabel }} : Toutes
-                <span class="rounded bg-ink-100 px-1 text-[9.5px] font-bold uppercase tracking-wide text-ink-400">à venir</span>
-            </button>
+        @foreach ($filterDefs as [$fkey, $flabel, $placeholder, $foptions])
+            @if (! empty($foptions))
+                <div @class([
+                    'inline-flex items-center rounded-lg border pl-2.5 text-[13px] font-semibold',
+                    'border-brand-300 bg-brand-50 text-brand-700' => $this->{$fkey} !== null,
+                    'border-ink-200 bg-white text-ink-800' => $this->{$fkey} === null,
+                ])>
+                    <span class="pointer-events-none mr-1 text-ink-400">{{ $flabel }} :</span>
+                    <select wire:model.live="{{ $fkey }}"
+                            class="cursor-pointer border-0 bg-transparent py-2 pl-0 pr-7 text-[13px] font-semibold focus:ring-0">
+                        <option value="">{{ $placeholder }}</option>
+                        @foreach ($foptions as $ovalue => $olabel)
+                            <option value="{{ $ovalue }}">{{ $olabel }}</option>
+                        @endforeach
+                    </select>
+                </div>
+            @endif
         @endforeach
+
+        @if ($this->activeFilterCount() > 0)
+            <button wire:click="resetFilters"
+                    class="inline-flex items-center gap-1 rounded-lg border border-ink-200 bg-white px-2.5 py-2 text-[12.5px] font-semibold text-ink-600 hover:bg-ink-50">
+                <svg width="13" height="13" viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+                Réinitialiser ({{ $this->activeFilterCount() }})
+            </button>
+        @endif
 
         <div class="ml-auto flex items-center gap-2">
             <div class="hidden items-center gap-1.5 md:flex">
